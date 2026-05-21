@@ -10,6 +10,7 @@ import {
   FileText,
   Settings,
   Activity,
+  Shield,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -26,8 +27,10 @@ const items = [
   { to: "/settings", label: "Paramètres", icon: Settings },
 ];
 
+const adminItem = { to: "/admin", label: "Administration", icon: Shield };
+
 export const AppSidebar = ({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) => {
-  const { user, signOut } = useAuth();
+  const { user, signOut, role } = useAuth();
 
   const email = user?.email ?? "";
   const initial = email ? email.trim().charAt(0).toUpperCase() : "?";
@@ -78,6 +81,29 @@ export const AppSidebar = ({ open, onOpenChange }: { open: boolean; onOpenChange
             </span>
           </NavLink>
         ))}
+        {role === 'admin' && (
+          <NavLink
+            to={adminItem.to}
+            className={({ isActive }) =>
+              `flex items-center rounded-md text-sm transition-colors ${
+                open ? "gap-3 px-3 py-2.5" : "justify-center px-2 py-2.5"
+              } ${
+                isActive
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`
+            }
+            onClick={() => {
+              if (window.matchMedia("(max-width: 767px)").matches) onOpenChange(false);
+            }}
+            title={adminItem.label}
+          >
+            <adminItem.icon className="w-4 h-4 shrink-0" />
+            <span className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${open ? "opacity-100 max-w-[200px]" : "opacity-0 max-w-0"}`}>
+              {adminItem.label}
+            </span>
+          </NavLink>
+        )}
       </nav>
 
       {/* Footer user */}

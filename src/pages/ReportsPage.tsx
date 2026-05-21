@@ -3,6 +3,8 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { SectionCard } from "@/components/dashboard/SectionCard";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAppStore, appActions } from "@/store/app-store";
 import {
   computeXbarR,
@@ -36,7 +38,7 @@ import {
 import { FileText, FileSpreadsheet, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-type ReportSection = "spc" | "capability" | "msa" | "uncertainty";
+type ReportSection = "spc" | "capability" | "msa" | "uncertainty" | "documentNumber";
 
 const ReportsPage = () => {
   const specs = useAppStore((s) => s.specs);
@@ -50,8 +52,12 @@ const ReportsPage = () => {
     capability: true,
     msa: true,
     uncertainty: true,
+    documentNumber: false,
   });
   const [busy, setBusy] = useState<"pdf" | "xlsx" | null>(null);
+  const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10));
+  const [reportAuthor, setReportAuthor] = useState("");
+  const [documentNumber, setDocumentNumber] = useState("");
 
   // refs for chart capture
   const xbarChartRef = useRef<HTMLDivElement>(null);
@@ -181,16 +187,21 @@ const ReportsPage = () => {
       doc.setFontSize(13);
       doc.text("SPC · MSA · Capabilité · Incertitude", 14, 32);
       doc.setFontSize(10);
-      doc.text(new Date().toLocaleString(), 14, 42);
+      doc.text(`Date : ${reportDate}`, 14, 42);
+      if (reportAuthor) doc.text(`Préparé par : ${reportAuthor}`, pageW / 2, 42);
 
       doc.setTextColor(0);
       doc.setFontSize(28);
       doc.text(specs.projectName, 14, 80);
       doc.setFontSize(11);
       doc.setTextColor(80);
-      doc.text(`Spécifications globales : LSL = ${specs.lsl} · Cible = ${specs.target} · USL = ${specs.usl} (${specs.unit})`, 14, 92);
-      doc.text(`Taille sous-groupe : n = ${specs.subgroupSize}`, 14, 100);
-      doc.text(`Source : ${filesCount > 0 ? `${filesCount} fichier(s) Excel importé(s)` : "Données de démonstration"}`, 14, 108);
+      if (specs.sampleName) doc.text(`Échantillon : ${specs.sampleName}`, 14, 90);
+      if (selected.documentNumber && documentNumber) {
+        doc.text(`N° document : ${documentNumber}`, 14, specs.sampleName ? 98 : 90);
+      }
+      const metaY = specs.sampleName || (selected.documentNumber && documentNumber) ? 108 : 92;
+      doc.text(`Taille sous-groupe : n = ${specs.subgroupSize} · Unité : ${specs.unit}`, 14, metaY);
+      doc.text(`Source : ${filesCount > 0 ? `${filesCount} fichier(s) Excel importé(s)` : "Données de démonstration"}`, 14, metaY + 8);
 
       doc.setTextColor(0);
       doc.setFontSize(11);
@@ -200,6 +211,7 @@ const ReportsPage = () => {
         selected.capability && "2. Capabilité du processus",
         selected.msa && "3. Analyse du système de mesure (MSA)",
         selected.uncertainty && "4. Incertitude de mesure",
+        selected.documentNumber && documentNumber && `N° document : ${documentNumber}`,
       ].filter(Boolean) as string[];
       sections.forEach((s, i) => doc.text(`• ${s}`, 18, 140 + i * 7));
       doc.text("Annexes : tableaux complets, données brutes, paramètres", 14, 140 + sections.length * 7 + 10);
@@ -387,11 +399,14 @@ const ReportsPage = () => {
         startY: 24,
         head: [["Paramètre", "Valeur"]],
         body: [
-          ["Projet", specs.projectName],
+          ["Société", specs.projectName],
+          ["Échantillon", specs.sampleName || "—"],
+          ["Date du rapport", reportDate],
+          ["Préparé par", reportAuthor || "—"],
+          ...(selected.documentNumber && documentNumber ? [["N° document", documentNumber]] : []),
           ["Unité", specs.unit],
-          ["LSL globale", String(specs.lsl)],
-          ["Cible globale", String(specs.target)],
-          ["USL globale", String(specs.usl)],
+          ["LSI (auto)", String(specs.lsl)],
+          ["LSS (auto)", String(specs.usl)],
           ["n (sous-groupe)", String(specs.subgroupSize)],
           ["Mappage mesures", mapping.measureCols.join(", ") || "—"],
           ["Mappage MSA — Pièce", mapping.partCol ?? "—"],
@@ -488,11 +503,12 @@ const ReportsPage = () => {
         doc.setPage(p);
         doc.setFontSize(8);
         doc.setTextColor(150);
-        doc.text(`${specs.projectName} · Page ${p} / ${total}`, pageW / 2, pageH - 6, { align: "center" });
+        const footerParts = [specs.projectName, specs.sampleName, selected.documentNumber && documentNumber ? documentNumber : null].filter(Boolean);
+        doc.text(`${footerParts.join(" · ")} · Page ${p} / ${total}`, pageW / 2, pageH - 6, { align: "center" });
         doc.setTextColor(0);
       }
 
-      doc.save(`rapport_${specs.projectName.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.pdf`);
+      doc.save(`rapport_${specs.projectName.replace(/\s+/g, "_")}_${reportDate}.pdf`);
       toast.success("Rapport PDF généré avec table des matières cliquable");
       notificationActions.add({ type: "success", title: "Rapport PDF généré", message: "Table des matières cliquable incluse." });
     } catch (err: any) {
@@ -513,12 +529,14 @@ const ReportsPage = () => {
         name: "Synthèse",
         rows: [
           ["Rapport SPC / MSA / Capabilité"],
-          ["Projet", specs.projectName],
-          ["Généré le", new Date().toLocaleString()],
+          ["Société", specs.projectName],
+          ["Échantillon", specs.sampleName || "—"],
+          ["Date du rapport", reportDate],
+          ["Préparé par", reportAuthor || "—"],
+          ...(selected.documentNumber && documentNumber ? [["N° document", documentNumber]] : []),
           ["Unité", specs.unit],
-          ["LSL", specs.lsl],
-          ["Target", specs.target],
-          ["USL", specs.usl],
+          ["LSI (auto)", specs.lsl],
+          ["LSS (auto)", specs.usl],
           ["Taille sous-groupe", specs.subgroupSize],
           [],
           ["Sections incluses"],
@@ -620,7 +638,7 @@ const ReportsPage = () => {
         });
       }
 
-      downloadXLSX(`rapport_${specs.projectName.replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.xlsx`, sheets);
+      downloadXLSX(`rapport_${specs.projectName.replace(/\s+/g, "_")}_${reportDate}.xlsx`, sheets);
       toast.success("Export Excel multi-feuilles généré");
       notificationActions.add({ type: "success", title: "Export Excel généré", message: "Fichier multi-feuilles prêt." });
     } catch (err: any) {
@@ -636,12 +654,38 @@ const ReportsPage = () => {
     { key: "capability", label: "Capabilité", desc: "Cp, Cpk, Pp, Ppk, Cpm, histogramme + courbe normale" },
     { key: "msa", label: "MSA (R&R)", desc: "Répétabilité, reproductibilité, %GRR, ndc" },
     { key: "uncertainty", label: "Incertitude", desc: "Type A + Type B, combinée, élargie (U)" },
+    { key: "documentNumber", label: "Numéro de document", desc: "Inclure le numéro de document dans l'en-tête du rapport" },
   ];
 
   const anySelected = Object.values(selected).some(Boolean);
 
   return (
-    <AppLayout title="Rapports" subtitle={`${specs.projectName} · Génération PDF & Excel multi-feuilles`}>
+    <AppLayout title="Rapports" subtitle={`${specs.projectName}${specs.sampleName ? ` · ${specs.sampleName}` : ""} · Génération PDF & Excel multi-feuilles`}>
+      <SectionCard title="Métadonnées du rapport" className="mb-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <Label className="text-xs">Date du rapport</Label>
+            <Input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">Préparé par</Label>
+            <Input
+              value={reportAuthor}
+              onChange={(e) => setReportAuthor(e.target.value)}
+              placeholder="Nom de l'auteur"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Numéro de document</Label>
+            <Input
+              value={documentNumber}
+              onChange={(e) => setDocumentNumber(e.target.value)}
+              placeholder="Ex : QC-2024-001"
+            />
+          </div>
+        </div>
+      </SectionCard>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
         <SectionCard title="1. Sélection des sections" className="lg:col-span-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -715,9 +759,9 @@ const ReportsPage = () => {
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
                     <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
                     <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", fontSize: 11 }} />
-                    <ReferenceLine x={specs.lsl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: `LSL`, fill: "hsl(var(--destructive))", fontSize: 10 }} />
-                    <ReferenceLine x={specs.usl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: `USL`, fill: "hsl(var(--destructive))", fontSize: 10 }} />
-                    <ReferenceLine x={specs.target.toFixed(2)} stroke="hsl(var(--success))" strokeDasharray="4 4" label={{ value: `Cible`, fill: "hsl(var(--success))", fontSize: 10 }} />
+                    {Number.isFinite(specs.lsl) && <ReferenceLine x={specs.lsl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: `LSI`, fill: "hsl(var(--destructive))", fontSize: 10 }} />}
+                    {Number.isFinite(specs.usl) && <ReferenceLine x={specs.usl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: `LSS`, fill: "hsl(var(--destructive))", fontSize: 10 }} />}
+                    {Number.isFinite(specs.target) && <ReferenceLine x={specs.target.toFixed(2)} stroke="hsl(var(--success))" strokeDasharray="4 4" label={{ value: `X̄`, fill: "hsl(var(--success))", fontSize: 10 }} />}
                     <Bar dataKey="count" fill="hsl(var(--primary))" opacity={0.7} radius={[2, 2, 0, 0]} />
                     <Line type="monotone" dataKey="pdf" stroke="hsl(var(--purple))" strokeWidth={2.5} dot={false} />
                   </ComposedChart>

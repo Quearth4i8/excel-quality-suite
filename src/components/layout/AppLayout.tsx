@@ -9,7 +9,7 @@ export const AppLayout = ({ children, title, subtitle }: { children: ReactNode; 
       if (raw === "true") return true;
       if (raw === "false") return false;
     } catch {}
-    return window.matchMedia("(min-width: 768px)").matches;
+    return typeof window !== "undefined" ? window.matchMedia("(min-width: 768px)").matches : false;
   });
 
   useEffect(() => {

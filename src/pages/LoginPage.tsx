@@ -9,8 +9,6 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/auth/AuthContext";
 import { BarChart3, Eye, EyeOff, Shield, TrendingUp } from "lucide-react";
 
-type Mode = "signin" | "signup";
-
 const orbStyles = [
   { top: "10%", left: "15%", size: 500, color: "hsl(217, 91%, 60%)", delay: 0, duration: 20 },
   { top: "60%", left: "70%", size: 400, color: "hsl(262, 83%, 58%)", delay: -5, duration: 25 },
@@ -26,7 +24,7 @@ const features = [
 ];
 
 const LoginPage = () => {
-  const { signInWithPassword, signUp, user } = useAuth();
+  const { signInWithPassword, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -36,7 +34,6 @@ const LoginPage = () => {
     return raw.startsWith("/") ? raw : "/";
   }, [location.search]);
 
-  const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState(() => localStorage.getItem("login_remember_email") ?? "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -53,20 +50,14 @@ const LoginPage = () => {
     e.preventDefault();
     setBusy(true);
     try {
-      if (mode === "signin") {
-        await signInWithPassword({ email, password });
-        if (remember) {
-          localStorage.setItem("login_remember_email", email);
-        } else {
-          localStorage.removeItem("login_remember_email");
-        }
-        toast.success("Connecté");
-        notificationActions.add({ type: "success", title: "Connecté", message: "Vous êtes maintenant connecté." });
+      await signInWithPassword({ email, password });
+      if (remember) {
+        localStorage.setItem("login_remember_email", email);
       } else {
-        await signUp({ email, password });
-        toast.success("Compte créé", { description: "Vérifiez votre email si la confirmation est activée." });
-        notificationActions.add({ type: "info", title: "Compte créé", message: "Vérifiez votre email si la confirmation est activée." });
+        localStorage.removeItem("login_remember_email");
       }
+      toast.success("Connecté");
+      notificationActions.add({ type: "success", title: "Connecté", message: "Vous êtes maintenant connecté." });
       navigate(redirectTo, { replace: true });
     } catch (err: any) {
       toast.error("Erreur d'authentification", { description: err?.message ?? String(err) });
@@ -78,10 +69,8 @@ const LoginPage = () => {
 
   return (
     <div className="login-page-root">
-      {/* Animated gradient background */}
       <div className="login-bg-gradient" />
 
-      {/* Floating orbs */}
       {orbStyles.map((orb, i) => (
         <div
           key={i}
@@ -98,10 +87,8 @@ const LoginPage = () => {
         />
       ))}
 
-      {/* Grid overlay */}
       <div className="login-grid-overlay" />
 
-      {/* Main content */}
       <div className="relative z-10 min-h-screen flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-5xl flex flex-col lg:flex-row items-center gap-12 lg:gap-20">
           {/* Left side — branding */}
@@ -133,25 +120,19 @@ const LoginPage = () => {
             </div>
           </div>
 
-          {/* Right side — glassmorphism card */}
+          {/* Right side — login card */}
           <div className="w-full max-w-md login-fade-right">
             <div className="login-glass-card rounded-2xl p-8">
               <div className="mb-6">
-                <h2 className="text-2xl font-bold text-white">
-                  {mode === "signin" ? "Connexion" : "Créer un compte"}
-                </h2>
+                <h2 className="text-2xl font-bold text-white">Connexion</h2>
                 <p className="text-sm text-white/50 mt-1">
-                  {mode === "signin"
-                    ? "Connectez-vous pour accéder à vos projets."
-                    : "Créez un compte pour enregistrer vos projets."}
+                  Connectez-vous pour accéder à vos projets.
                 </p>
               </div>
 
               <form onSubmit={onSubmit} className="space-y-5">
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-white/70">
-                    Email
-                  </Label>
+                  <Label htmlFor="email" className="text-white/70">Email</Label>
                   <Input
                     id="email"
                     type="email"
@@ -162,9 +143,7 @@ const LoginPage = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password" className="text-white/70">
-                    Mot de passe
-                  </Label>
+                  <Label htmlFor="password" className="text-white/70">Mot de passe</Label>
                   <div className="relative">
                     <Input
                       id="password"
@@ -187,19 +166,17 @@ const LoginPage = () => {
                   </div>
                 </div>
 
-                {mode === "signin" && (
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="remember"
-                      checked={remember}
-                      onCheckedChange={(v) => setRemember(!!v)}
-                      className="border-white/20 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
-                    />
-                    <Label htmlFor="remember" className="text-sm text-white/50 cursor-pointer select-none">
-                      Se souvenir de moi
-                    </Label>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="remember"
+                    checked={remember}
+                    onCheckedChange={(v) => setRemember(!!v)}
+                    className="border-white/20 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+                  />
+                  <Label htmlFor="remember" className="text-sm text-white/50 cursor-pointer select-none">
+                    Se souvenir de moi
+                  </Label>
+                </div>
 
                 <Button
                   type="submit"
@@ -212,36 +189,10 @@ const LoginPage = () => {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
-                      Chargement…
+                      Connexion…
                     </span>
-                  ) : mode === "signin" ? "Se connecter" : "Créer un compte"}
+                  ) : "Se connecter"}
                 </Button>
-
-                <div className="text-sm text-center text-white/40">
-                  {mode === "signin" ? (
-                    <span>
-                      Pas encore de compte ?{" "}
-                      <button
-                        type="button"
-                        className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors"
-                        onClick={() => setMode("signup")}
-                      >
-                        Créer un compte
-                      </button>
-                    </span>
-                  ) : (
-                    <span>
-                      Déjà inscrit ?{" "}
-                      <button
-                        type="button"
-                        className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors"
-                        onClick={() => setMode("signin")}
-                      >
-                        Se connecter
-                      </button>
-                    </span>
-                  )}
-                </div>
               </form>
             </div>
           </div>

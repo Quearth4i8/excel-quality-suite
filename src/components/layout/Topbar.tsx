@@ -37,23 +37,23 @@ export const Topbar = ({
   }, [activeFile, activeSheet, files.length]);
 
   return (
-    <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border px-6 py-4 flex items-center justify-between">
-      <div className="flex items-center gap-3 min-w-0">
+    <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b border-border px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <Button
           variant="outline"
           size="icon"
-          className="shrink-0"
+          className="shrink-0 h-9 w-9"
           onClick={onToggleSidebar}
           aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
         >
           <PanelLeft className="w-4 h-4" />
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">{title}</h1>
-          {subtitle && <p className="text-sm text-muted-foreground mt-0.5">{subtitle}</p>}
+        <div className="min-w-0">
+          <h1 className="text-lg sm:text-2xl font-bold text-foreground tracking-tight truncate">{title}</h1>
+          {subtitle && <p className="hidden sm:block text-sm text-muted-foreground mt-0.5 truncate">{subtitle}</p>}
         </div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1 sm:gap-3">
         <DataStatusPopover
           filesCount={files.length}
           summary={summary}
@@ -64,9 +64,12 @@ export const Topbar = ({
           mergedCols={mergedSheet?.headers?.length ?? null}
           mappingValidated={mappingValidated}
         />
-        <Button variant="default" size="sm" className="gap-2">
+        <Button variant="default" size="sm" className="gap-2 hidden sm:inline-flex" onClick={() => window.location.reload()}>
           <RefreshCw className="w-4 h-4" />
           Actualiser
+        </Button>
+        <Button variant="default" size="icon" className="sm:hidden h-9 w-9" title="Actualiser" onClick={() => window.location.reload()}>
+          <RefreshCw className="w-4 h-4" />
         </Button>
         <NotificationBell />
         <HelpDialog />
@@ -100,10 +103,10 @@ const DataStatusPopover = ({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="hidden md:flex items-center gap-2 px-3 py-2 rounded-md border border-border bg-card text-sm text-muted-foreground hover:bg-muted transition-colors">
-          <Calendar className="w-4 h-4" />
-          <span className="font-medium text-foreground/80">Données en cours</span>
-          <span className="text-muted-foreground truncate max-w-[220px]">{summary}</span>
+        <button className="hidden sm:flex items-center gap-2 px-2 sm:px-3 py-2 rounded-md border border-border bg-card text-xs sm:text-sm text-muted-foreground hover:bg-muted transition-colors">
+          <Calendar className="w-4 h-4 shrink-0" />
+          <span className="font-medium text-foreground/80 hidden md:inline">Données en cours</span>
+          <span className="text-muted-foreground truncate max-w-[120px] sm:max-w-[220px]">{summary}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-96" align="start">

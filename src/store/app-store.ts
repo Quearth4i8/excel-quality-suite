@@ -31,6 +31,7 @@ export interface ProjectSpecs {
   subgroupSize: number;
   unit: string;
   projectName: string;
+  sampleName: string;
 }
 
 // ===== Per-column specs (override global) =====
@@ -80,7 +81,8 @@ const DEFAULT_SPECS: ProjectSpecs = {
   target: 10,
   subgroupSize: 5,
   unit: "mm",
-  projectName: "Projet par défaut",
+  projectName: "Société par défaut",
+  sampleName: "",
 };
 
 const DEFAULT_MAPPING: ColumnMapping = {
@@ -314,7 +316,7 @@ export const appActions = {
       files,
       activeFileIndex: (dbState.activeFileIndex ?? (files.length ? 0 : null)) as number | null,
       activeSheetIndex: (dbState.activeSheetIndex ?? (files.length ? 0 : null)) as number | null,
-      specs: (dbState.specs ?? store.get().specs) as ProjectSpecs,
+      specs: { ...DEFAULT_SPECS, ...(dbState.specs ?? store.get().specs) } as ProjectSpecs,
       mapping: (dbState.mapping ?? store.get().mapping) as ColumnMapping,
       perColumnSpecs: (dbState.perColumnSpecs ?? store.get().perColumnSpecs) as PerColumnSpecs,
       importPlan,
