@@ -29,10 +29,10 @@ export const max = (a: number[]) => Math.max(...a);
 
 // ===== X-bar / R chart =====
 export interface XbarRResult {
-  subgroupMeans: number[];
-  subgroupRanges: number[];
-  xbar: number;
-  rbar: number;
+  subgroupMeans: number[];   // X̄ᵢ — mean of each subgroup row
+  subgroupRanges: number[];  // Rᵢ — range (max−min) of each subgroup row
+  xbar: number;              // X̿ — mean of all subgroup means (used in all limit calculations)
+  rbar: number;              // R̄ — mean of all ranges
   uclX: number;
   lclX: number;
   clX: number;
@@ -81,6 +81,31 @@ export function computeXbarR(subgroups: number[][]): XbarRResult {
     westernElectric: we,
     n,
   };
+}
+
+// ===== Reference line builders =====
+export interface RefLine { y: number; label: string; color: string; }
+
+export function buildXbarRefLines(result: XbarRResult): RefLine[] {
+  const { xbar, rbar } = result;
+  return [
+    { y: xbar + 0.594 * rbar, label: "LCS", color: "hsl(var(--destructive))" },
+    { y: xbar + 0.377 * rbar, label: "LSS", color: "hsl(var(--warning))" },
+    { y: xbar,                label: "X̿",  color: "hsl(var(--success))" },
+    { y: xbar - 0.377 * rbar, label: "LSI", color: "hsl(var(--warning))" },
+    { y: xbar - 0.594 * rbar, label: "LCI", color: "hsl(var(--destructive))" },
+  ];
+}
+
+export function buildRRefLines(result: XbarRResult): RefLine[] {
+  const { uclR, clR, lclR } = result;
+  return [
+    { y: uclR,                                        label: "LCS", color: "hsl(var(--destructive))" },
+    { y: clR + (uclR - clR) * (2 / 3),               label: "LSS", color: "hsl(var(--warning))" },
+    { y: clR,                                         label: "R̄",  color: "hsl(var(--success))" },
+    { y: Math.max(0, clR - (clR - lclR) * (2 / 3)), label: "LSI", color: "hsl(var(--warning))" },
+    { y: lclR,                                        label: "LCI", color: "hsl(var(--destructive))" },
+  ];
 }
 
 // ===== X-bar / S chart =====

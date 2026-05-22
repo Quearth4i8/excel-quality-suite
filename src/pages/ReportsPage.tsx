@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { SectionCard } from "@/components/dashboard/SectionCard";
+import { SpecsPanel } from "@/components/specs/SpecsPanel";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,8 @@ import {
   buildHistogram,
   normalPdf,
   MSAEntry,
+  buildXbarRefLines,
+  buildRRefLines,
 } from "@/lib/spc-engine";
 import { DEMO_SUBGROUPS, DEMO_MSA } from "@/lib/demo-data";
 import { downloadXLSX } from "@/lib/excel";
@@ -242,8 +245,8 @@ const ReportsPage = () => {
           body: [
             ["Sous-groupes", String(subgroups.length)],
             ["Taille (n)", String(spc.n)],
-            ["X̄ (moyenne)", spc.xbar.toFixed(4)],
-            ["R̄", spc.rbar.toFixed(4)],
+            ["X̿ (moy. des moy.)", spc.xbar.toFixed(4)],
+            ["R̄ (moy. étendues)", spc.rbar.toFixed(4)],
             ["UCL X̄", spc.uclX.toFixed(4)],
             ["LCL X̄", spc.lclX.toFixed(4)],
             ["UCL R", spc.uclR.toFixed(4)],
@@ -556,8 +559,8 @@ const ReportsPage = () => {
           name: "SPC - Limites",
           rows: [
             ["Paramètre", "Valeur"],
-            ["X̄ global", spc.xbar],
-            ["R̄", spc.rbar],
+            ["X̿ (moy. des moy.)", spc.xbar],
+            ["R̄ (moy. étendues)", spc.rbar],
             ["UCL X̄", spc.uclX],
             ["CL X̄", spc.clX],
             ["LCL X̄", spc.lclX],
@@ -686,6 +689,10 @@ const ReportsPage = () => {
         </div>
       </SectionCard>
 
+      <div className="mb-5">
+        <SpecsPanel />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
         <SectionCard title="1. Sélection des sections" className="lg:col-span-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -741,11 +748,21 @@ const ReportsPage = () => {
             <>
               <div ref={xbarChartRef} className="bg-card p-3 rounded-lg border border-border">
                 <div className="text-xs font-medium text-muted-foreground mb-1">Carte X̄</div>
-                <ControlChart values={spc.subgroupMeans} ucl={spc.uclX} cl={spc.clX} lcl={spc.lclX} outOfControl={spc.outOfControl} height={200} />
+                <ControlChart
+                  values={spc.subgroupMeans}
+                  referenceLines={buildXbarRefLines(spc)}
+                  outOfControl={spc.outOfControl}
+                  height={200}
+                />
               </div>
               <div ref={rChartRef} className="bg-card p-3 rounded-lg border border-border">
                 <div className="text-xs font-medium text-muted-foreground mb-1">Carte R</div>
-                <ControlChart values={spc.subgroupRanges} ucl={spc.uclR} cl={spc.clR} lcl={spc.lclR} color="hsl(var(--info))" height={200} />
+                <ControlChart
+                  values={spc.subgroupRanges}
+                  referenceLines={buildRRefLines(spc)}
+                  color="hsl(var(--info))"
+                  height={200}
+                />
               </div>
             </>
           )}

@@ -8,7 +8,6 @@ import { ProtectedRoute } from "@/auth/ProtectedRoute";
 import { AdminRoute } from "@/auth/AdminRoute";
 import Dashboard from "./pages/Dashboard";
 import DataPage from "./pages/DataPage";
-import ImportPlanPage from "./pages/ImportPlanPage";
 import SPCPage from "./pages/SPCPage";
 import CapabilityPage from "./pages/CapabilityPage";
 import MSAPage from "./pages/MSAPage";
@@ -43,14 +42,6 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <DataPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/import-plan"
-              element={
-                <ProtectedRoute>
-                  <ImportPlanPage />
                 </ProtectedRoute>
               }
             />

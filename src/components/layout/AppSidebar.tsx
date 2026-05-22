@@ -2,7 +2,6 @@ import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
   Database,
-  Layers,
   LineChart,
   Target,
   Users,
@@ -18,7 +17,6 @@ import { Button } from "@/components/ui/button";
 const items = [
   { to: "/", label: "Tableau de bord", icon: LayoutDashboard },
   { to: "/data", label: "Données", icon: Database },
-  { to: "/import-plan", label: "Plan d'import", icon: Layers },
   { to: "/spc", label: "Cartes SPC", icon: LineChart },
   { to: "/capability", label: "Capabilité Process", icon: Target },
   { to: "/msa", label: "MSA (R&R)", icon: Users },

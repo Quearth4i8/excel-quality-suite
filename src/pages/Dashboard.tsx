@@ -14,6 +14,8 @@ import {
   normalPdf,
   mean,
   MSAEntry,
+  buildXbarRefLines,
+  buildRRefLines,
 } from "@/lib/spc-engine";
 import {
   Bar,
@@ -208,18 +210,14 @@ const Dashboard = () => {
             <div className="text-xs text-muted-foreground mb-1 font-medium">Carte X̄ (Moyennes)</div>
             <ControlChart
               values={spc.subgroupMeans}
-              ucl={spc.uclX}
-              cl={spc.clX}
-              lcl={spc.lclX}
+              referenceLines={buildXbarRefLines(spc)}
               outOfControl={spc.outOfControl}
               height={180}
             />
             <div className="text-xs text-muted-foreground mb-1 mt-3 font-medium">Carte R (Étendues)</div>
             <ControlChart
               values={spc.subgroupRanges}
-              ucl={spc.uclR}
-              cl={spc.clR}
-              lcl={spc.lclR}
+              referenceLines={buildRRefLines(spc)}
               color="hsl(var(--info))"
               height={150}
             />
