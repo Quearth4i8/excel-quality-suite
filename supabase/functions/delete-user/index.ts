@@ -37,6 +37,13 @@ serve(async (req) => {
     if (!targetId) throw new Error("User ID is required");
     if (targetId === user.id) throw new Error("You cannot delete your own account");
 
+    // Delete profile first to satisfy the FK constraint (profiles.id → auth.users.id)
+    const { error: profileDeleteError } = await supabase
+      .from("profiles")
+      .delete()
+      .eq("id", targetId);
+    if (profileDeleteError) throw profileDeleteError;
+
     const { error: deleteError } = await supabase.auth.admin.deleteUser(targetId);
     if (deleteError) throw deleteError;
 
