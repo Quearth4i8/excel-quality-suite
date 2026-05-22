@@ -50,7 +50,14 @@ const AdminPage = () => {
         body: { email, password },
       });
 
-      if (error) throw error;
+      if (error) {
+        let msg = error.message;
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.error) msg = body.error;
+        } catch {}
+        throw new Error(msg);
+      }
       
       toast.success("Utilisateur créé avec succès");
       setEmail("");

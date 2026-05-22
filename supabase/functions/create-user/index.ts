@@ -58,16 +58,34 @@ serve(async (req) => {
       throw new Error("Password must be at least 6 characters");
     }
 
-    // Create the user
-    const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true, // Auto-confirm email for admin-created users
-    });
+    // Check if user already exists (including unconfirmed)
+    const { data: existingUsers } = await supabase.auth.admin.listUsers();
+    const existing = existingUsers?.users?.find((u) => u.email === email);
 
-    if (createError) {
-      throw createError;
+    let newUser;
+    if (existing) {
+      // Update existing user: set password and confirm email
+      const { data: updated, error: updateError } = await supabase.auth.admin.updateUserById(
+        existing.id,
+        { password, email_confirm: true }
+      );
+      if (updateError) throw updateError;
+      newUser = updated;
+    } else {
+      const { data: created, error: createError } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      });
+      if (createError) throw createError;
+      newUser = created;
     }
+
+    // Ensure profile row exists (trigger may not fire for updated users)
+    await supabase.from("profiles").upsert(
+      { id: newUser.user.id, email: newUser.user.email, role: "user" },
+      { onConflict: "id", ignoreDuplicates: true }
+    );
 
     return new Response(
       JSON.stringify({
@@ -82,12 +100,13 @@ serve(async (req) => {
         status: 200,
       }
     );
-  } catch (error) {
-    console.error("Error creating user:", error);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "An error occurred while creating the user";
+    console.error("Error creating user:", msg);
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message || "An error occurred while creating the user",
+        error: msg,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
