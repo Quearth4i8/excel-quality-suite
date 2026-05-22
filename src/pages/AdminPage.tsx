@@ -5,9 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/auth/AuthContext";
 import { supabase } from "@/lib/supabase";
-import { UserPlus, Users, Shield, Loader2 } from "lucide-react";
+import { UserPlus, Users, Loader2, Trash2 } from "lucide-react";
 
 interface UserProfile {
   id: string;
@@ -23,6 +31,8 @@ const AdminPage = () => {
   const [loading, setLoading] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<UserProfile | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -31,7 +41,6 @@ const AdminPage = () => {
         .from('profiles')
         .select('*')
         .order('created_at', { ascending: false });
-      
       if (error) throw error;
       setUsers(data || []);
     } catch (err: any) {
@@ -45,11 +54,9 @@ const AdminPage = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      // Call the Supabase edge function to create user
       const { data, error } = await supabase.functions.invoke('create-user', {
         body: { email, password },
       });
-
       if (error) {
         let msg = error.message;
         try {
@@ -58,7 +65,6 @@ const AdminPage = () => {
         } catch {}
         throw new Error(msg);
       }
-      
       toast.success("Utilisateur créé avec succès");
       setEmail("");
       setPassword("");
@@ -70,6 +76,31 @@ const AdminPage = () => {
     }
   };
 
+  const handleDeleteConfirm = async () => {
+    if (!userToDelete) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase.functions.invoke('delete-user', {
+        body: { userId: userToDelete.id },
+      });
+      if (error) {
+        let msg = error.message;
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.error) msg = body.error;
+        } catch {}
+        throw new Error(msg);
+      }
+      toast.success("Utilisateur supprimé");
+      setUserToDelete(null);
+      fetchUsers();
+    } catch (err: any) {
+      toast.error("Erreur lors de la suppression", { description: err?.message });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleToggleRole = async (userId: string, currentRole: string) => {
     try {
       const newRole = currentRole === 'admin' ? 'user' : 'admin';
@@ -77,9 +108,7 @@ const AdminPage = () => {
         .from('profiles')
         .update({ role: newRole })
         .eq('id', userId);
-      
       if (error) throw error;
-      
       toast.success(`Rôle changé en ${newRole}`);
       fetchUsers();
     } catch (err: any) {
@@ -87,7 +116,6 @@ const AdminPage = () => {
     }
   };
 
-  // Load users on mount
   useEffect(() => {
     fetchUsers();
   }, []);
@@ -193,13 +221,22 @@ const AdminPage = () => {
                         {u.role === 'admin' ? 'Admin' : 'Utilisateur'}
                       </span>
                       {u.id !== user?.id && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleToggleRole(u.id, u.role)}
-                        >
-                          {u.role === 'admin' ? 'Rétrograder' : 'Promouvoir'}
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleToggleRole(u.id, u.role)}
+                          >
+                            {u.role === 'admin' ? 'Rétrograder' : 'Promouvoir'}
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setUserToDelete(u)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -209,6 +246,38 @@ const AdminPage = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Delete confirmation modal */}
+      <Dialog open={!!userToDelete} onOpenChange={(open) => { if (!open) setUserToDelete(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Supprimer l'utilisateur</DialogTitle>
+            <DialogDescription>
+              Cette action est irréversible. L'utilisateur{" "}
+              <span className="font-medium text-foreground">{userToDelete?.email}</span>{" "}
+              sera définitivement supprimé de la plateforme.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUserToDelete(null)} disabled={deleting}>
+              Annuler
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleting}>
+              {deleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Suppression...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Supprimer
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };
