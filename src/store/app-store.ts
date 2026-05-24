@@ -68,14 +68,19 @@ export interface AppState {
 }
 
 export const DEFAULT_SPECS: ProjectSpecs = {
-  lsl: 9.5,
-  usl: 10.5,
+  lsl: -0.5,  // signed offset below target (absolute LSL = target + lsl)
+  usl: 0.5,   // signed offset above target (absolute USL = target + usl)
   target: 10,
   subgroupSize: 5,
   unit: "mm",
   projectName: "Société par défaut",
   sampleName: "",
 };
+
+/** Compute absolute spec limits from signed offset specs: lslAbs = target + lsl, uslAbs = target + usl */
+export function absLimits(specs: Pick<ProjectSpecs, "lsl" | "usl" | "target">) {
+  return { lsl: specs.target + specs.lsl, usl: specs.target + specs.usl };
+}
 
 const DEFAULT_MAPPING: ColumnMapping = {
   measureCols: [],

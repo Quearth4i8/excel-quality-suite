@@ -185,23 +185,23 @@ export const SpecsPanel = () => {
           />
         </div>
         <div>
-          <Label className="text-xs">Min — Tolérance (LSL)</Label>
+          <Label className="text-xs">Tolérance inf. LSL (−ΔT)</Label>
           <Input
             type="number"
             step="0.001"
             value={specs.lsl}
             onChange={(e) => setSpecs({ lsl: Number(e.target.value) })}
-            placeholder="Ex: 9.500"
+            placeholder="Ex: -0.050"
           />
         </div>
         <div>
-          <Label className="text-xs">Max — Tolérance (USL)</Label>
+          <Label className="text-xs">Tolérance sup. USL (+ΔT)</Label>
           <Input
             type="number"
             step="0.001"
             value={specs.usl}
             onChange={(e) => setSpecs({ usl: Number(e.target.value) })}
-            placeholder="Ex: 10.500"
+            placeholder="Ex: 0.050"
           />
         </div>
       </div>

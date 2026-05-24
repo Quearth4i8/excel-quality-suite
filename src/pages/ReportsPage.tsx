@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAppStore, appActions } from "@/store/app-store";
+import { useAppStore, appActions, absLimits } from "@/store/app-store";
 import {
   computeXbarR,
   computeCapability,
@@ -90,7 +90,7 @@ const ReportsPage = () => {
   const flatValues = useMemo(() => subgroups.flat(), [subgroups]);
   const spc = useMemo(() => computeXbarR(subgroups), [subgroups]);
   const cap = useMemo(
-    () => computeCapability(flatValues, specs.lsl, specs.usl, specs.target, specs.subgroupSize),
+    () => { const { lsl, usl } = absLimits(specs); return computeCapability(flatValues, lsl, usl, specs.target, specs.subgroupSize); },
     [flatValues, specs]
   );
 
@@ -170,7 +170,7 @@ const ReportsPage = () => {
       const perColumnCap = (sheet && mapping.measureCols.length > 0)
         ? mapping.measureCols.map((c) => {
             const vals = sheet.rows.map((r) => Number(r[c])).filter((v) => !isNaN(v));
-            const eff = perColumnSpecs[c] ?? { lsl: specs.lsl, usl: specs.usl, target: specs.target };
+            const eff = perColumnSpecs[c] ?? absLimits(specs);
             const ccap = vals.length > 1
               ? computeCapability(vals, eff.lsl, eff.usl, eff.target, specs.subgroupSize)
               : null;
@@ -408,8 +408,8 @@ const ReportsPage = () => {
           ["Préparé par", reportAuthor || "—"],
           ...(selected.documentNumber && documentNumber ? [["N° document", documentNumber]] : []),
           ["Unité", specs.unit],
-          ["LSI (auto)", String(specs.lsl)],
-          ["LSS (auto)", String(specs.usl)],
+          ["LSI (auto)", String(absLimits(specs).lsl)],
+          ["LSS (auto)", String(absLimits(specs).usl)],
           ["n (sous-groupe)", String(specs.subgroupSize)],
           ["Mappage mesures", mapping.measureCols.join(", ") || "—"],
           ["Mappage MSA — Pièce", mapping.partCol ?? "—"],
@@ -538,8 +538,8 @@ const ReportsPage = () => {
           ["Préparé par", reportAuthor || "—"],
           ...(selected.documentNumber && documentNumber ? [["N° document", documentNumber]] : []),
           ["Unité", specs.unit],
-          ["LSI (auto)", specs.lsl],
-          ["LSS (auto)", specs.usl],
+          ["LSI (auto)", absLimits(specs).lsl],
+          ["LSS (auto)", absLimits(specs).usl],
           ["Taille sous-groupe", specs.subgroupSize],
           [],
           ["Sections incluses"],
@@ -776,8 +776,8 @@ const ReportsPage = () => {
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
                     <YAxis tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
                     <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", fontSize: 11 }} />
-                    {Number.isFinite(specs.lsl) && <ReferenceLine x={specs.lsl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: `LSI`, fill: "hsl(var(--destructive))", fontSize: 10 }} />}
-                    {Number.isFinite(specs.usl) && <ReferenceLine x={specs.usl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: `LSS`, fill: "hsl(var(--destructive))", fontSize: 10 }} />}
+                    <ReferenceLine x={absLimits(specs).lsl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: `LSI`, fill: "hsl(var(--destructive))", fontSize: 10 }} />
+                    <ReferenceLine x={absLimits(specs).usl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="4 4" label={{ value: `LSS`, fill: "hsl(var(--destructive))", fontSize: 10 }} />
                     {Number.isFinite(specs.target) && <ReferenceLine x={specs.target.toFixed(2)} stroke="hsl(var(--success))" strokeDasharray="4 4" label={{ value: `X̄`, fill: "hsl(var(--success))", fontSize: 10 }} />}
                     <Bar dataKey="count" fill="hsl(var(--primary))" opacity={0.7} radius={[2, 2, 0, 0]} />
                     <Line type="monotone" dataKey="pdf" stroke="hsl(var(--purple))" strokeWidth={2.5} dot={false} />

@@ -5,7 +5,7 @@ import { SectionCard } from "@/components/dashboard/SectionCard";
 import { ControlChart } from "@/components/charts/ControlChart";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
-import { useAppStore, appActions } from "@/store/app-store";
+import { useAppStore, appActions, absLimits } from "@/store/app-store";
 import {
   computeXbarR,
   computeCapability,
@@ -78,7 +78,7 @@ const Dashboard = () => {
   // Compute on imported data only
   const spc = useMemo(() => (hasSpc ? computeXbarR(subgroups) : null), [hasSpc, subgroups]);
   const cap = useMemo(
-    () => (hasSpc ? computeCapability(flatValues, specs.lsl, specs.usl, specs.target, specs.subgroupSize) : null),
+    () => { const { lsl, usl } = absLimits(specs); return hasSpc ? computeCapability(flatValues, lsl, usl, specs.target, specs.subgroupSize) : null; },
     [hasSpc, flatValues, specs]
   );
   const msa = useMemo(() => (hasMsa ? computeMSA(msaEntries) : null), [hasMsa, msaEntries]);
@@ -231,8 +231,8 @@ const Dashboard = () => {
           <SectionCard title="3. Capabilité Process">
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-1 space-y-2 text-sm">
-                <Spec label="USL (Limite sup.)" value={`${specs.usl} ${specs.unit}`} />
-                <Spec label="LSL (Limite inf.)" value={`${specs.lsl} ${specs.unit}`} />
+                <Spec label="USL (Limite sup.)" value={`${absLimits(specs).usl.toFixed(4)} ${specs.unit}`} />
+                <Spec label="LSL (Limite inf.)" value={`${absLimits(specs).lsl.toFixed(4)} ${specs.unit}`} />
                 <Spec label="Cible (Target)" value={`${specs.target} ${specs.unit}`} />
                 <Spec label="Moyenne (X̄)" value={`${cap.mean.toFixed(3)} ${specs.unit}`} />
                 <Spec label="Écart type (σ)" value={`${cap.stdLongTerm.toFixed(3)} ${specs.unit}`} />
@@ -244,8 +244,8 @@ const Dashboard = () => {
                     <XAxis dataKey="label" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
                     <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
                     <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", fontSize: 11 }} />
-                    <ReferenceLine x={specs.lsl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="3 3" label={{ value: "LSL", fill: "hsl(var(--destructive))", fontSize: 10 }} />
-                    <ReferenceLine x={specs.usl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="3 3" label={{ value: "USL", fill: "hsl(var(--destructive))", fontSize: 10 }} />
+                    <ReferenceLine x={absLimits(specs).lsl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="3 3" label={{ value: "LSL", fill: "hsl(var(--destructive))", fontSize: 10 }} />
+                    <ReferenceLine x={absLimits(specs).usl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="3 3" label={{ value: "USL", fill: "hsl(var(--destructive))", fontSize: 10 }} />
                     <ReferenceLine x={specs.target.toFixed(2)} stroke="hsl(var(--success))" strokeDasharray="3 3" label={{ value: "Cible", fill: "hsl(var(--success))", fontSize: 10 }} />
                     <Bar dataKey="count" fill="hsl(var(--primary))" opacity={0.8} radius={[2, 2, 0, 0]} />
                     <Line type="monotone" dataKey="pdf" stroke="hsl(var(--purple))" strokeWidth={2} dot={false} />

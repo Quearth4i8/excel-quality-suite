@@ -195,23 +195,42 @@ export interface CapabilityResult {
   status: "capable" | "improve" | "not_capable";
 }
 
-export function computeCapability(values: number[], lsl: number, usl: number, target?: number, subgroupSize?: number): CapabilityResult {
+export function computeCapability(
+  values: number[],
+  lsl: number,
+  usl: number,
+  target?: number,
+  subgroupSize?: number,
+  ranges?: number[] // pre-computed subgroup ranges (e.g. row ranges for multi-column data)
+): CapabilityResult {
   const m = mean(values);
+
+  // σg = √(Σ(xi − X̿)² / (N−1))  — global long-term std (sample std)
   const sLong = stdev(values);
-  let sShort = sLong;
-  if (subgroupSize && subgroupSize >= 2 && subgroupSize <= 10) {
-    // estimate from subgroups
+
+  // σi = R̄ / d2  — within-subgroup short-term std
+  const n = (subgroupSize && subgroupSize >= 2 && subgroupSize <= 10) ? subgroupSize : 5;
+  let sShort = sLong; // fallback when not enough data
+  if (ranges && ranges.length > 0) {
+    // Use pre-computed ranges (row ranges in multi-column analysis: each row = one subgroup)
+    sShort = mean(ranges) / SPC_CONSTANTS[n].d2;
+  } else {
+    // Estimate σi from consecutive subgroups within a single column
     const subgroups: number[][] = [];
-    for (let i = 0; i < values.length; i += subgroupSize) subgroups.push(values.slice(i, i + subgroupSize));
-    const completeSubs = subgroups.filter((s) => s.length === subgroupSize);
+    for (let i = 0; i < values.length; i += n) subgroups.push(values.slice(i, i + n));
+    const completeSubs = subgroups.filter((s) => s.length === n);
     if (completeSubs.length > 0) {
-      const rbar = mean(completeSubs.map(range));
-      sShort = rbar / SPC_CONSTANTS[subgroupSize].d2;
+      sShort = mean(completeSubs.map(range)) / SPC_CONSTANTS[n].d2;
     }
   }
+
+  // CP = (USL − LSL) / (6 σi)
   const cp = (usl - lsl) / (6 * sShort);
+  // CPK = min( (USL − X̿)/(3 σi),  (X̿ − LSL)/(3 σi) )
   const cpk = Math.min((usl - m) / (3 * sShort), (m - lsl) / (3 * sShort));
+  // PP = (USL − LSL) / (6 σg)
   const pp = (usl - lsl) / (6 * sLong);
+  // PPK = min( (USL − X̿)/(3 σg),  (X̿ − LSL)/(3 σg) )
   const ppk = Math.min((usl - m) / (3 * sLong), (m - lsl) / (3 * sLong));
   const cpm = target !== undefined ? (usl - lsl) / (6 * Math.sqrt(sLong ** 2 + (m - target) ** 2)) : undefined;
 
@@ -229,20 +248,22 @@ export function computeCapability(values: number[], lsl: number, usl: number, ta
 }
 
 // ===== Histogram =====
-export function buildHistogram(values: number[], bins = 20) {
+export function buildHistogram(values: number[], bins = 20, loOverride?: number, hiOverride?: number) {
   if (values.length === 0) return [];
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
+  const lo = loOverride ?? Math.min(...values);
+  const hi = hiOverride ?? Math.max(...values);
   const w = (hi - lo) / bins || 1;
   const counts = Array(bins).fill(0);
   values.forEach((v) => {
     const idx = Math.min(bins - 1, Math.floor((v - lo) / w));
     counts[idx]++;
   });
+  // Pick label precision so bin centres are distinct
+  const decimals = w < 0.0001 ? 5 : w < 0.001 ? 4 : w < 0.01 ? 3 : w < 0.1 ? 2 : 1;
   return counts.map((c, i) => ({
     bin: lo + i * w + w / 2,
     count: c,
-    label: (lo + i * w + w / 2).toFixed(2),
+    label: (lo + i * w + w / 2).toFixed(decimals),
   }));
 }
 
