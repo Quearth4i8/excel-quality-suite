@@ -7,6 +7,7 @@ import { AuthProvider } from "@/auth/AuthContext";
 import { ProtectedRoute } from "@/auth/ProtectedRoute";
 import { AdminRoute } from "@/auth/AdminRoute";
 import Dashboard from "./pages/Dashboard";
+import DataLandingPage from "./pages/DataLandingPage";
 import DataPage from "./pages/DataPage";
 import SPCPage from "./pages/SPCPage";
 import CapabilityPage from "./pages/CapabilityPage";
@@ -41,7 +42,23 @@ const App = () => (
               path="/data"
               element={
                 <ProtectedRoute>
-                  <DataPage />
+                  <DataLandingPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/data/spc"
+              element={
+                <ProtectedRoute>
+                  <DataPage mode="spc" />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/data/msa"
+              element={
+                <ProtectedRoute>
+                  <DataPage mode="msa" />
                 </ProtectedRoute>
               }
             />

@@ -272,7 +272,7 @@ export function normalPdf(x: number, mu: number, sigma: number) {
   return (1 / (sigma * Math.sqrt(2 * Math.PI))) * Math.exp(-((x - mu) ** 2) / (2 * sigma ** 2));
 }
 
-// ===== MSA / Gage R&R (Average & Range method) =====
+// ===== MSA / Gage R&R (Average & Range method — AIAG K constants) =====
 export interface MSAEntry {
   part: string | number;
   operator: string | number;
@@ -280,24 +280,75 @@ export interface MSAEntry {
   value: number;
 }
 
+// K1 = 1/d2* for the number of trials (repeatability)
+export const MSA_K1: Record<number, number> = {
+  2: 0.8862,
+  3: 0.5908,
+};
+
+// K2 = 1/d2* for the number of appraisers/operators (reproducibility)
+export const MSA_K2: Record<number, number> = {
+  2: 0.7071,
+  3: 0.5231,
+};
+
+// K3 = 1/d2* for the number of parts (part variation)
+export const MSA_K3: Record<number, number> = {
+  2: 0.7071,
+  3: 0.5231,
+  4: 0.4467,
+  5: 0.4030,
+  6: 0.3742,
+  7: 0.3534,
+  8: 0.3375,
+  9: 0.3249,
+  10: 0.3146,
+};
+
+function getK1(r: number): number {
+  const clamped = Math.min(Math.max(r, 2), 3);
+  return MSA_K1[clamped] ?? MSA_K1[2];
+}
+function getK2(g: number): number {
+  const clamped = Math.min(Math.max(g, 2), 3);
+  return MSA_K2[clamped] ?? MSA_K2[2];
+}
+function getK3(p: number): number {
+  const clamped = Math.min(Math.max(p, 2), 10);
+  return MSA_K3[clamped] ?? MSA_K3[10];
+}
+
 export interface MSAResult {
-  ev: number; // repeatability
-  av: number; // reproducibility
-  grr: number;
-  pv: number; // part variation
-  tv: number; // total variation
+  // Main metrics (AIAG range method)
+  ev: number;   // EV = R̄ × K1  (Equipment Variation / Repeatability)
+  av: number;   // AV = √((X̄DIFF × K2)² − EV²/(n·r))  (Appraiser Variation / Reproducibility)
+  grr: number;  // R&R = √(EV² + AV²)
+  pv: number;   // PV = Rp × K3  (Part Variation)
+  tv: number;   // TV = √(R&R² + PV²)
+  // Percentages
   evPct: number;
   avPct: number;
   grrPct: number;
   pvPct: number;
-  ndc: number; // number of distinct categories
+  // Variance contributions
   evContrib: number;
   avContrib: number;
   grrContrib: number;
   pvContrib: number;
+  // ndc
+  ndc: number;
+  // Study dimensions
   parts: number;
   operators: number;
   trials: number;
+  // Intermediate values for formula display
+  rbar: number;   // R̄ — average of ranges
+  xDiff: number;  // X̄DIFF — range of operator averages
+  rp: number;     // Rp — range of part averages
+  k1: number;
+  k2: number;
+  k3: number;
+  // Status
   interpretation: string;
   status: "excellent" | "acceptable" | "improve";
 }
@@ -309,7 +360,7 @@ export function computeMSA(entries: MSAEntry[]): MSAResult {
   const parts = partsSet.length;
   const operators = opsSet.length;
 
-  // values[op][part] = trials[]
+  // data[op][part] = trials[]
   const data: Record<string, Record<string, number[]>> = {};
   opsSet.forEach((o) => {
     data[o] = {};
@@ -321,53 +372,54 @@ export function computeMSA(entries: MSAEntry[]): MSAResult {
 
   const trials = Math.max(...opsSet.flatMap((o) => partsSet.map((p) => data[o][p].length)));
 
-  // Range per (op,part)
+  // ── EV = R̄ × K1 ──
   const ranges: number[] = [];
   opsSet.forEach((o) => partsSet.forEach((p) => {
     const t = data[o][p];
     if (t.length > 1) ranges.push(range(t));
   }));
   const rbar = mean(ranges);
-  const dStar = SPC_CONSTANTS[Math.min(Math.max(trials, 2), 10)].d2;
-  const ev = rbar / dStar;
+  const k1 = getK1(trials);
+  const ev = rbar * k1;
 
-  // Operator means
+  // ── AV = √((X̄DIFF × K2)² − EV²/(n·r)) ──
   const opMeans = opsSet.map((o) => {
     const all: number[] = [];
     partsSet.forEach((p) => all.push(...data[o][p]));
     return mean(all);
   });
   const xDiff = max(opMeans) - min(opMeans);
-  const dStarOp = SPC_CONSTANTS[Math.min(Math.max(operators, 2), 10)].d2;
-  const avSquared = (xDiff / dStarOp) ** 2 - (ev ** 2) / (parts * trials);
+  const k2 = getK2(operators);
+  const avSquared = (xDiff * k2) ** 2 - ev ** 2 / (parts * trials);
   const av = Math.sqrt(Math.max(0, avSquared));
 
+  // ── R&R = √(EV² + AV²) ──
   const grr = Math.sqrt(ev ** 2 + av ** 2);
 
-  // Part variation: range of part averages across operators
+  // ── PV = Rp × K3 ──
   const partAverages = partsSet.map((p) => {
     const all: number[] = [];
     opsSet.forEach((o) => all.push(...data[o][p]));
     return mean(all);
   });
   const rp = max(partAverages) - min(partAverages);
-  const dStarPart = SPC_CONSTANTS[Math.min(Math.max(parts, 2), 10)].d2;
-  const pv = rp / dStarPart;
+  const k3 = getK3(parts);
+  const pv = rp * k3;
 
+  // ── TV = √(R&R² + PV²) ──
   const tv = Math.sqrt(grr ** 2 + pv ** 2);
 
-  const evPct = (ev / tv) * 100;
-  const avPct = (av / tv) * 100;
-  const grrPct = (grr / tv) * 100;
-  const pvPct = (pv / tv) * 100;
+  const evPct = tv > 0 ? (ev / tv) * 100 : 0;
+  const avPct = tv > 0 ? (av / tv) * 100 : 0;
+  const grrPct = tv > 0 ? (grr / tv) * 100 : 0;
+  const pvPct = tv > 0 ? (pv / tv) * 100 : 0;
 
-  // contribution = variance ratios
-  const evContrib = (ev ** 2 / tv ** 2) * 100;
-  const avContrib = (av ** 2 / tv ** 2) * 100;
-  const grrContrib = (grr ** 2 / tv ** 2) * 100;
-  const pvContrib = (pv ** 2 / tv ** 2) * 100;
+  const evContrib = tv > 0 ? (ev ** 2 / tv ** 2) * 100 : 0;
+  const avContrib = tv > 0 ? (av ** 2 / tv ** 2) * 100 : 0;
+  const grrContrib = tv > 0 ? (grr ** 2 / tv ** 2) * 100 : 0;
+  const pvContrib = tv > 0 ? (pv ** 2 / tv ** 2) * 100 : 0;
 
-  const ndc = Math.floor(1.41 * (pv / grr));
+  const ndc = grr > 0 ? Math.floor(1.41 * (pv / grr)) : 0;
 
   let status: MSAResult["status"] = "improve";
   let interpretation = "Système de mesure à améliorer (>30%)";
@@ -376,14 +428,15 @@ export function computeMSA(entries: MSAEntry[]): MSAResult {
     interpretation = "Système de mesure excellent (<10%)";
   } else if (grrPct <= 30) {
     status = "acceptable";
-    interpretation = "Système de mesure acceptable (10-30%)";
+    interpretation = "Système de mesure acceptable (10–30%)";
   }
 
   return {
     ev, av, grr, pv, tv,
     evPct, avPct, grrPct, pvPct,
-    ndc, evContrib, avContrib, grrContrib, pvContrib,
-    parts, operators, trials,
+    evContrib, avContrib, grrContrib, pvContrib,
+    ndc, parts, operators, trials,
+    rbar, xDiff, rp, k1, k2, k3,
     interpretation, status,
   };
 }

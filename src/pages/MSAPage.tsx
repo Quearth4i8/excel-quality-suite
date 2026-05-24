@@ -2,37 +2,74 @@ import { useMemo, useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { SectionCard } from "@/components/dashboard/SectionCard";
 import { EmptyState } from "@/components/dashboard/EmptyState";
-import { useAppStore, appActions } from "@/store/app-store";
+import { useAppStore } from "@/store/app-store";
 import { computeMSA, MSAEntry } from "@/lib/spc-engine";
+import { MSASpecsPanel } from "@/components/specs/MSASpecsPanel";
+import { detectSheet } from "@/lib/auto-detect";
+import {
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+} from "recharts";
+import { CheckCircle2, AlertTriangle, XCircle, User } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from "recharts";
-import { CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+interface OperatorMeta { name: string; date: string; id: string; }
+
 const MSAPage = () => {
-  const msaSheet = useAppStore((s) => appActions.getSheetForKind("msa"));
+  const files  = useAppStore((s) => s.files);
   const mapping = useAppStore((s) => s.mapping);
 
-  const [colPart, setColPart] = useState<string>(mapping.partCol ?? "");
-  const [colOp, setColOp] = useState<string>(mapping.operatorCol ?? "");
-  const [colTrial, setColTrial] = useState<string>(mapping.trialCol ?? "");
-  const [colVal, setColVal] = useState<string>(mapping.valueCol ?? "");
+  // Column mapping (auto-synced silently)
+  const [colPart,  setColPart]  = useState<string>(mapping.partCol     ?? "");
+  const [colOp,    setColOp]    = useState<string>(mapping.operatorCol ?? "");
+  const [colTrial, setColTrial] = useState<string>(mapping.trialCol    ?? "");
+  const [colVal,   setColVal]   = useState<string>(mapping.valueCol    ?? "");
 
-  // Sync local overrides with auto-detected mapping when the file changes
   useEffect(() => {
-    if (mapping.partCol && !colPart) setColPart(mapping.partCol);
-    if (mapping.operatorCol && !colOp) setColOp(mapping.operatorCol);
-    if (mapping.trialCol && !colTrial) setColTrial(mapping.trialCol);
-    if (mapping.valueCol && !colVal) setColVal(mapping.valueCol);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (mapping.partCol)     setColPart(mapping.partCol);
+    if (mapping.operatorCol) setColOp(mapping.operatorCol);
+    if (mapping.trialCol)    setColTrial(mapping.trialCol);
+    if (mapping.valueCol)    setColVal(mapping.valueCol);
   }, [mapping.partCol, mapping.operatorCol, mapping.trialCol, mapping.valueCol]);
 
-  const parseNumberValue = (value: any): number => {
-    if (typeof value === "number") return value;
-    if (typeof value === "string") {
-      const normalized = value.trim().replace(/,/g, ".");
-      return Number(normalized);
+  // File selector — MSA files only
+  const msaFiles = useMemo(
+    () => files.reduce<{ idx: number; name: string }[]>((acc, f, i) => {
+      if (f.sheets.some((s) => { const k = detectSheet(s).kind; return k === "msa" || k === "msa-rr"; }))
+        acc.push({ idx: i, name: f.name });
+      return acc;
+    }, []),
+    [files]
+  );
+
+  const [selectedFileIdx, setSelectedFileIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedFileIdx === null && msaFiles.length > 0)
+      setSelectedFileIdx(msaFiles[0].idx);
+  }, [msaFiles, selectedFileIdx]);
+
+  const msaSheet = useMemo(() => {
+    if (selectedFileIdx === null) return null;
+    const file = files[selectedFileIdx];
+    if (!file) return null;
+    for (const sh of file.sheets) {
+      const k = detectSheet(sh).kind;
+      if (k === "msa" || k === "msa-rr") return sh;
     }
+    return file.sheets[0] ?? null;
+  }, [files, selectedFileIdx]);
+
+  // Operator metadata
+  const [opMeta, setOpMeta] = useState<Record<string, OperatorMeta>>({});
+  const setOpField = (op: string, key: keyof OperatorMeta) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setOpMeta((prev) => ({ ...prev, [op]: { ...(prev[op] ?? { name: "", date: "", id: "" }), [key]: e.target.value } }));
+
+  const parseNum = (v: any): number => {
+    if (typeof v === "number") return v;
+    if (typeof v === "string") return Number(v.trim().replace(/,/g, "."));
     return NaN;
   };
 
@@ -40,55 +77,96 @@ const MSAPage = () => {
     if (!msaSheet || !colPart || !colOp || !colVal) return [];
     return msaSheet.rows
       .map((r, i) => ({
-        part: r[colPart],
-        operator: r[colOp],
-        trial: colTrial ? parseNumberValue(r[colTrial]) : i,
-        value: parseNumberValue(r[colVal]),
+        part: r[colPart], operator: r[colOp],
+        trial: colTrial ? parseNum(r[colTrial]) : i,
+        value: parseNum(r[colVal]),
       }))
       .filter((e) => e.part != null && e.operator != null && !isNaN(e.value));
   }, [msaSheet, colPart, colOp, colTrial, colVal]);
 
+  const operators = useMemo(
+    () => Array.from(new Set(entries.map((e) => String(e.operator)))).sort(),
+    [entries]
+  );
+
+  useEffect(() => {
+    if (operators.length === 0) return;
+    setOpMeta((prev) => {
+      const next = { ...prev };
+      operators.forEach((op) => { if (!next[op]) next[op] = { name: "", date: "", id: "" }; });
+      return next;
+    });
+  }, [operators]);
+
   const hasData = entries.length > 0;
   const msa = useMemo(() => (hasData ? computeMSA(entries) : null), [hasData, entries]);
 
+  // ── Operator cards (data-driven, always local) ──
+  const operatorCards = operators.length > 0 ? (
+    <SectionCard title="Opérateurs" className="mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {operators.map((op) => {
+          const meta = opMeta[op] ?? { name: "", date: "", id: "" };
+          return (
+            <div key={op} className="rounded-xl border border-border p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 text-primary" />
+                </div>
+                <span className="font-semibold text-sm">Opérateur {op}</span>
+              </div>
+              <Field label="Nom complet"><Input value={meta.name} onChange={setOpField(op, "name")} placeholder="—" /></Field>
+              <Field label="Date"><Input type="date" value={meta.date} onChange={setOpField(op, "date")} /></Field>
+              <Field label="ID"><Input value={meta.id} onChange={setOpField(op, "id")} placeholder="—" /></Field>
+            </div>
+          );
+        })}
+      </div>
+    </SectionCard>
+  ) : null;
+
+  // ── File picker ──
+  const filePicker = (
+    <SectionCard title="Fichier MSA actif" className="mb-5">
+      <div className="flex items-center gap-4 flex-wrap">
+        {msaFiles.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Aucun fichier MSA — importez vos données depuis{" "}
+            <span className="font-medium text-foreground">Données → MSA</span>.
+          </p>
+        ) : (
+          <Select
+            value={selectedFileIdx !== null ? String(selectedFileIdx) : ""}
+            onValueChange={(v) => setSelectedFileIdx(Number(v))}
+          >
+            <SelectTrigger className="w-72">
+              <SelectValue placeholder="Sélectionner un fichier" />
+            </SelectTrigger>
+            <SelectContent>
+              {msaFiles.map(({ idx, name }) => (
+                <SelectItem key={idx} value={String(idx)}>{name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {msaSheet && (
+          <span className="text-xs text-muted-foreground">
+            {msaSheet.rows.length} lignes · {msaSheet.headers.length} colonnes
+          </span>
+        )}
+      </div>
+    </SectionCard>
+  );
+
   if (!hasData || !msa) {
     return (
-      <AppLayout title="MSA — Gage R&R" subtitle="Répétabilité & Reproductibilité (méthode moyenne & étendue)">
-        {msaSheet ? (
-          <SectionCard title="Mappage MSA" className="mb-5">
-            <div className="text-xs text-muted-foreground mb-3">
-              Fichier MSA détecté. Sélectionnez les colonnes correspondantes :
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { label: "Pièce", state: colPart, setter: setColPart },
-                { label: "Opérateur", state: colOp, setter: setColOp },
-                { label: "Essai", state: colTrial, setter: setColTrial },
-                { label: "Valeur", state: colVal, setter: setColVal },
-              ].map((f) => (
-                <div key={f.label}>
-                  <Label className="text-xs">{f.label}</Label>
-                  <Select value={f.state || "__none"} onValueChange={(v) => f.setter(v === "__none" ? "" : v)}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="— Sélectionner —" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none">— Sélectionner —</SelectItem>
-                      {msaSheet.headers.map((h) => (
-                        <SelectItem key={h} value={h}>
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
-        ) : null}
+      <AppLayout title="MSA — Gage R&R" subtitle="Répétabilité & Reproductibilité (méthode étendue AIAG)">
+        {filePicker}
+        <div className="mb-5"><MSASpecsPanel /></div>
+        {operatorCards}
         <EmptyState
           title="Aucune donnée MSA"
-          message="Importez votre fichier Excel MSA depuis l'onglet « Données ». Le fichier doit contenir des colonnes Pièce, Opérateur et Mesure. La méthode moyenne & étendue sera appliquée pour calculer EV, AV, GRR, PV et ndc."
+          message="Importez un fichier Excel MSA depuis Données → MSA. Le fichier doit contenir des colonnes Pièce, Opérateur, Essai et Mesure."
         />
       </AppLayout>
     );
@@ -100,84 +178,28 @@ const MSAPage = () => {
     { name: `PV ${msa.pvPct.toFixed(1)}%`, value: msa.pvPct, color: "hsl(var(--success))" },
   ];
   const barData = [
-    { name: "EV", "% Contribution": msa.evContrib, "% Study Var": msa.evPct },
-    { name: "AV", "% Contribution": msa.avContrib, "% Study Var": msa.avPct },
-    { name: "GRR", "% Contribution": msa.grrContrib, "% Study Var": msa.grrPct },
-    { name: "PV", "% Contribution": msa.pvContrib, "% Study Var": msa.pvPct },
+    { name: "EV",  "% Contribution": +msa.evContrib.toFixed(2),  "% Study Var": +msa.evPct.toFixed(2) },
+    { name: "AV",  "% Contribution": +msa.avContrib.toFixed(2),  "% Study Var": +msa.avPct.toFixed(2) },
+    { name: "GRR", "% Contribution": +msa.grrContrib.toFixed(2), "% Study Var": +msa.grrPct.toFixed(2) },
+    { name: "PV",  "% Contribution": +msa.pvContrib.toFixed(2),  "% Study Var": +msa.pvPct.toFixed(2) },
   ];
 
-  const StatusIcon = msa.status === "excellent" ? CheckCircle2 : msa.status === "acceptable" ? AlertTriangle : XCircle;
+  const StatusIcon  = msa.status === "excellent" ? CheckCircle2 : msa.status === "acceptable" ? AlertTriangle : XCircle;
   const statusColor = msa.status === "excellent" ? "text-success" : msa.status === "acceptable" ? "text-warning" : "text-destructive";
+  const statusBg    = msa.status === "excellent" ? "bg-success/10 border-success/30" : msa.status === "acceptable" ? "bg-warning/10 border-warning/30" : "bg-destructive/10 border-destructive/30";
 
   return (
-    <AppLayout title="MSA — Gage R&R" subtitle="Répétabilité & Reproductibilité (méthode moyenne & étendue)">
-      <SectionCard title="Mappage des colonnes" className="mb-5">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[
-            { label: "Pièce", state: colPart, setter: setColPart },
-            { label: "Opérateur", state: colOp, setter: setColOp },
-            { label: "Essai", state: colTrial, setter: setColTrial },
-            { label: "Valeur", state: colVal, setter: setColVal },
-          ].map((f) => (
-            <div key={f.label}>
-              <Label className="text-xs">{f.label}</Label>
-              <Select value={f.state || "__none"} onValueChange={(v) => f.setter(v === "__none" ? "" : v)}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="— Sélectionner —" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none">— Sélectionner —</SelectItem>
-                  {msaSheet!.headers.map((h) => (
-                    <SelectItem key={h} value={h}>
-                      {h}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
+    <AppLayout title="MSA — Gage R&R" subtitle="Répétabilité & Reproductibilité (méthode étendue AIAG)">
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-        <SectionCard title="Configuration">
-          <div className="space-y-2 text-sm">
-            <Spec label="Nombre de pièces" value={String(msa.parts)} />
-            <Spec label="Nombre d'opérateurs" value={String(msa.operators)} />
-            <Spec label="Nombre d'essais" value={String(msa.trials)} />
-            <Spec label="Nombre catégories distinctes (ndc)" value={String(msa.ndc)} highlight={msa.ndc >= 5} />
-          </div>
-        </SectionCard>
+      {/* 1. File picker */}
+      {filePicker}
 
-        <SectionCard title="Résultats" className="lg:col-span-2">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-muted-foreground border-b border-border">
-                <th className="text-left py-2 font-medium">Source</th>
-                <th className="text-right py-2 font-medium">Écart-type</th>
-                <th className="text-right py-2 font-medium">% Contribution</th>
-                <th className="text-right py-2 font-medium">% Study Var</th>
-              </tr>
-            </thead>
-            <tbody className="tabular-nums">
-              <tr className="border-b border-border/50"><td className="py-2">Répétabilité (EV)</td><td className="text-right">{msa.ev.toFixed(4)}</td><td className="text-right">{msa.evContrib.toFixed(2)}%</td><td className="text-right">{msa.evPct.toFixed(2)}%</td></tr>
-              <tr className="border-b border-border/50"><td className="py-2">Reproductibilité (AV)</td><td className="text-right">{msa.av.toFixed(4)}</td><td className="text-right">{msa.avContrib.toFixed(2)}%</td><td className="text-right">{msa.avPct.toFixed(2)}%</td></tr>
-              <tr className="border-b border-border/50 font-semibold bg-accent/30"><td className="py-2">R&R Total</td><td className="text-right">{msa.grr.toFixed(4)}</td><td className="text-right">{msa.grrContrib.toFixed(2)}%</td><td className="text-right">{msa.grrPct.toFixed(2)}%</td></tr>
-              <tr className="border-b border-border/50"><td className="py-2">Pièce à pièce (PV)</td><td className="text-right">{msa.pv.toFixed(4)}</td><td className="text-right">{msa.pvContrib.toFixed(2)}%</td><td className="text-right">{msa.pvPct.toFixed(2)}%</td></tr>
-              <tr className="font-semibold"><td className="py-2">Total Variation (TV)</td><td className="text-right">{msa.tv.toFixed(4)}</td><td className="text-right">100%</td><td className="text-right">100%</td></tr>
-            </tbody>
-          </table>
-          <div className={`flex items-center gap-3 mt-4 p-3 rounded-lg border ${msa.status === "excellent" ? "bg-success/10 border-success/30" : msa.status === "acceptable" ? "bg-warning/10 border-warning/30" : "bg-destructive/10 border-destructive/30"}`}>
-            <StatusIcon className={`w-7 h-7 ${statusColor}`} />
-            <div>
-              <div className={`font-semibold ${statusColor}`}>%GRR = {msa.grrPct.toFixed(2)}%</div>
-              <div className="text-xs text-muted-foreground">{msa.interpretation}</div>
-            </div>
-          </div>
-        </SectionCard>
-      </div>
+      {/* 2. Spécifications + operators */}
+      <div className="mb-5"><MSASpecsPanel /></div>
+      {operatorCards}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {/* 3. Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
         <SectionCard title="Décomposition de la variation">
           <div className="h-64">
             <ResponsiveContainer>
@@ -198,7 +220,7 @@ const MSAPage = () => {
               <BarChart data={barData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={11} />
-                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} unit="%" />
                 <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", fontSize: 11 }} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 <Bar dataKey="% Contribution" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
@@ -208,15 +230,75 @@ const MSAPage = () => {
           </div>
         </SectionCard>
       </div>
+
+      {/* 4. Results */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <SectionCard title="Configuration">
+          <div className="space-y-0">
+            <SpecRow label="Pièces (n)"   value={String(msa.parts)} />
+            <SpecRow label="Opérateurs"   value={String(msa.operators)} />
+            <SpecRow label="Essais (r)"   value={String(msa.trials)} />
+            <SpecRow label="ndc"          value={String(msa.ndc)} highlight={msa.ndc >= 5} />
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Résultats R&R" className="lg:col-span-2">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-muted-foreground text-xs uppercase tracking-wide">
+                <th className="text-left pb-2 font-medium">Source</th>
+                <th className="text-right pb-2 font-medium">Valeur</th>
+                <th className="text-right pb-2 font-medium">% Contrib.</th>
+                <th className="text-right pb-2 font-medium">% Study Var</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums text-sm">
+              <ResultRow label="Répétabilité (EV)"     val={msa.ev}  contrib={msa.evContrib}  pct={msa.evPct} />
+              <ResultRow label="Reproductibilité (AV)" val={msa.av}  contrib={msa.avContrib}  pct={msa.avPct} />
+              <ResultRow label="R&R Total"             val={msa.grr} contrib={msa.grrContrib} pct={msa.grrPct} bold />
+              <ResultRow label="Pièce à pièce (PV)"   val={msa.pv}  contrib={msa.pvContrib}  pct={msa.pvPct} />
+              <ResultRow label="Variation Totale (TV)" val={msa.tv}  contrib={100}            pct={100} bold />
+            </tbody>
+          </table>
+          <div className={`flex items-center gap-3 mt-4 p-3 rounded-lg border ${statusBg}`}>
+            <StatusIcon className={`w-6 h-6 shrink-0 ${statusColor}`} />
+            <div>
+              <div className={`text-sm font-bold ${statusColor}`}>%GRR = {msa.grrPct.toFixed(2)}%</div>
+              <div className="text-xs text-muted-foreground">{msa.interpretation}</div>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
+
     </AppLayout>
   );
 };
 
-const Spec = ({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) => (
-  <div className="flex justify-between border-b border-border/50 py-2">
-    <span className="text-muted-foreground text-xs">{label}</span>
-    <span className={`font-semibold text-sm tabular-nums ${highlight ? "text-success" : ""}`}>{value}</span>
+// ── Helpers ──
+
+const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div>
+    <Label className="text-xs text-muted-foreground">{label}</Label>
+    <div className="mt-1 [&_input]:h-8 [&_input]:text-sm">{children}</div>
   </div>
+);
+
+const SpecRow = ({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) => (
+  <div className="flex justify-between items-center border-b border-border/50 py-2.5">
+    <span className="text-xs text-muted-foreground">{label}</span>
+    <span className={`text-sm font-semibold tabular-nums ${highlight ? "text-success" : ""}`}>{value}</span>
+  </div>
+);
+
+const ResultRow = ({ label, val, contrib, pct, bold }: {
+  label: string; val: number; contrib: number; pct: number; bold?: boolean;
+}) => (
+  <tr className={`border-b border-border/50 ${bold ? "font-semibold bg-accent/30" : ""}`}>
+    <td className="py-2">{label}</td>
+    <td className="text-right tabular-nums">{val.toFixed(4)}</td>
+    <td className="text-right tabular-nums">{contrib.toFixed(2)}%</td>
+    <td className="text-right tabular-nums">{pct.toFixed(2)}%</td>
+  </tr>
 );
 
 export default MSAPage;

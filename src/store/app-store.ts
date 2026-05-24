@@ -54,17 +54,34 @@ export interface ColumnMapping {
   validated: boolean;
 }
 
+export interface MSAProjectSpecs {
+  equipment: string;
+  reference: string;
+  resolutionVal: string;
+  resolutionUnit: string;
+  piece: string;
+  characteristics: string;
+  target: string;
+  toleranceInf: string;
+  toleranceSup: string;
+}
+
+export const DEFAULT_MSA_PROJECT_SPECS: MSAProjectSpecs = {
+  equipment: "", reference: "", resolutionVal: "", resolutionUnit: "mm",
+  piece: "", characteristics: "", target: "", toleranceInf: "", toleranceSup: "",
+};
+
 export interface AppState {
   files: ParsedFile[];
   activeFileIndex: number | null;
   activeSheetIndex: number | null;
   specs: ProjectSpecs;
   perColumnSpecs: PerColumnSpecs;
-  // Per-file specs (keyed by file name)
   fileSpecs: Record<string, ProjectSpecs>;
   filePerColumnSpecs: Record<string, PerColumnSpecs>;
   mapping: ColumnMapping;
   mergedSheet: ParsedSheet | null;
+  msaProjectSpecs: MSAProjectSpecs;
 }
 
 export const DEFAULT_SPECS: ProjectSpecs = {
@@ -160,6 +177,7 @@ function loadPersisted(): Partial<AppState> {
       perColumnSpecs: parsed.perColumnSpecs ?? {},
       fileSpecs: parsed.fileSpecs ?? {},
       filePerColumnSpecs: parsed.filePerColumnSpecs ?? {},
+      msaProjectSpecs: parsed.msaProjectSpecs ?? DEFAULT_MSA_PROJECT_SPECS,
     };
   } catch {
     return {};
@@ -178,6 +196,7 @@ const store = new SimpleStore<AppState>({
   filePerColumnSpecs: persisted.filePerColumnSpecs || {},
   mapping: { ...DEFAULT_MAPPING, ...(persisted.mapping || {}) },
   mergedSheet: null,
+  msaProjectSpecs: { ...DEFAULT_MSA_PROJECT_SPECS, ...(persisted.msaProjectSpecs || {}) },
 });
 
 function persist() {
@@ -191,6 +210,7 @@ function persist() {
         perColumnSpecs: s.perColumnSpecs,
         fileSpecs: s.fileSpecs,
         filePerColumnSpecs: s.filePerColumnSpecs,
+        msaProjectSpecs: s.msaProjectSpecs,
       })
     );
   } catch {}
@@ -454,6 +474,11 @@ export const appActions = {
   // ===== Global specs (backward compat / no-file fallback) =====
   setSpecs: (patch: Partial<ProjectSpecs>) => {
     store.set({ specs: { ...store.get().specs, ...patch } });
+    persist();
+  },
+
+  setMsaProjectSpecs: (patch: Partial<MSAProjectSpecs>) => {
+    store.set({ msaProjectSpecs: { ...store.get().msaProjectSpecs, ...patch } });
     persist();
   },
 

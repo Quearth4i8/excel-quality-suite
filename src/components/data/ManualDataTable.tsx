@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,27 +8,52 @@ import type { ParsedFile, ParsedSheet } from "@/lib/excel";
 import { Plus, Trash2, TableProperties } from "lucide-react";
 import { toast } from "sonner";
 
+export type ManualDataMode = "spc" | "msa" | "generic";
+
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  mode?: ManualDataMode;
 }
 
-const DEFAULT_COLS = ["Col1", "Col2", "Col3"];
+const COLS_BY_MODE: Record<ManualDataMode, string[]> = {
+  spc: ["Subgroup", "M1", "M2", "M3", "M4", "M5"],
+  msa: ["Part", "Operator", "Trial", "Measurement"],
+  generic: ["Col1", "Col2", "Col3"],
+};
+
+const NAME_BY_MODE: Record<ManualDataMode, string> = {
+  spc: "SPC - Saisie manuelle",
+  msa: "MSA - Saisie manuelle",
+  generic: "Tableau manuel",
+};
+
 const DEFAULT_ROWS = 5;
 
 function makeEmptyRows(nRows: number, nCols: number): string[][] {
   return Array.from({ length: nRows }, () => Array(nCols).fill(""));
 }
 
-export const ManualDataTable = ({ open, onOpenChange }: Props) => {
-  const [tableName, setTableName] = useState("Tableau manuel");
-  const [columns, setColumns] = useState<string[]>(DEFAULT_COLS);
-  const [rows, setRows] = useState<string[][]>(makeEmptyRows(DEFAULT_ROWS, DEFAULT_COLS.length));
+export const ManualDataTable = ({ open, onOpenChange, mode = "generic" }: Props) => {
+  const defaultCols = COLS_BY_MODE[mode];
+  const defaultName = NAME_BY_MODE[mode];
+
+  const [tableName, setTableName] = useState(defaultName);
+  const [columns, setColumns] = useState<string[]>(defaultCols);
+  const [rows, setRows] = useState<string[][]>(makeEmptyRows(DEFAULT_ROWS, defaultCols.length));
+
+  useEffect(() => {
+    if (open) {
+      setTableName(NAME_BY_MODE[mode]);
+      setColumns(COLS_BY_MODE[mode]);
+      setRows(makeEmptyRows(DEFAULT_ROWS, COLS_BY_MODE[mode].length));
+    }
+  }, [open, mode]);
 
   const reset = () => {
-    setTableName("Tableau manuel");
-    setColumns(DEFAULT_COLS);
-    setRows(makeEmptyRows(DEFAULT_ROWS, DEFAULT_COLS.length));
+    setTableName(NAME_BY_MODE[mode]);
+    setColumns(COLS_BY_MODE[mode]);
+    setRows(makeEmptyRows(DEFAULT_ROWS, COLS_BY_MODE[mode].length));
   };
 
   // ── Column operations ──
@@ -106,7 +131,7 @@ export const ManualDataTable = ({ open, onOpenChange }: Props) => {
         <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
           <DialogTitle className="flex items-center gap-2">
             <TableProperties className="w-5 h-5 text-primary" />
-            Saisie manuelle de données
+            {mode === "spc" ? "Saisie manuelle – SPC" : mode === "msa" ? "Saisie manuelle – MSA (R&R)" : "Saisie manuelle de données"}
           </DialogTitle>
         </DialogHeader>
 

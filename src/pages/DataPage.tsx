@@ -7,21 +7,27 @@ import { useAppStore, appActions } from "@/store/app-store";
 import { parseExcelFile } from "@/lib/excel";
 import {
   Upload, FileSpreadsheet, Trash2, Eye, Wand2,
-  Layers, CheckCircle2, Play, TableProperties,
+  Layers, CheckCircle2, Play, TableProperties, BarChart2, Users, ChevronLeft,
 } from "lucide-react";
+import { detectSheet } from "@/lib/auto-detect";
 import { DEMO_SUBGROUPS, DEMO_MSA } from "@/lib/demo-data";
 import { toast } from "sonner";
 import { notificationActions } from "@/lib/notifications";
 import { MappingWizard } from "@/components/wizard/MappingWizard";
 import { ManualDataTable } from "@/components/data/ManualDataTable";
 import { SpecsPanel } from "@/components/specs/SpecsPanel";
+import { MSASpecsPanel } from "@/components/specs/MSASpecsPanel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 
-const DataPage = () => {
+interface DataPageProps {
+  mode: "spc" | "msa";
+}
+
+const DataPage = ({ mode }: DataPageProps) => {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const files = useAppStore((s) => s.files);
@@ -34,6 +40,19 @@ const DataPage = () => {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+
+  const isSpc = mode === "spc";
+
+  const isFileOfMode = (f: (typeof files)[number]) =>
+    f.sheets.some((s) => {
+      const k = detectSheet(s).kind;
+      return isSpc ? k === "spc" || k === "spc-card" : k === "msa" || k === "msa-rr";
+    });
+
+  const modeFileIndices = files.reduce<number[]>((acc, f, i) => {
+    if (isFileOfMode(f)) acc.push(i);
+    return acc;
+  }, []);
 
   const activeFile = activeFileIndex !== null ? files[activeFileIndex] : null;
   const activeSheet = activeFile && activeSheetIndex !== null ? activeFile.sheets[activeSheetIndex] : null;
@@ -55,11 +74,8 @@ const DataPage = () => {
     if (imported > 0) {
       const det = (appActions as any)._lastDetection as any;
       const parts: string[] = [];
-      if (det?.dashboard) parts.push("Tableau de bord");
       if (det?.spcCard) parts.push("Carte SPC");
       if (det?.msaRR) parts.push("MSA R&R");
-      if (det?.capability) parts.push("Capabilité");
-      if (det?.uncertainty) parts.push("Incertitude");
       if (det?.spc) parts.push(`SPC : ${det.spc.measures} colonne(s)`);
       if (det?.msa) parts.push("MSA : Pièce/Opérateur détectés");
 
@@ -70,13 +86,6 @@ const DataPage = () => {
       if (parts.length) {
         toast.success(`${imported} fichier(s) importé(s)`, { description: desc });
         notificationActions.add({ type: "success", title: `${imported} fichier(s) importé(s)`, message: desc });
-        setTimeout(() => {
-          if (det?.dashboard) navigate("/");
-          else if (det?.spcCard || det?.spc) navigate("/spc");
-          else if (det?.msaRR || det?.msa) navigate("/msa");
-          else if (det?.capability) navigate("/capability");
-          else if (det?.uncertainty) navigate("/uncertainty");
-        }, 1500);
       } else {
         toast.warning(`${imported} fichier(s) importé(s)`, { description: desc });
         notificationActions.add({ type: "warning", title: `${imported} fichier(s) importé(s)`, message: desc });
@@ -94,34 +103,55 @@ const DataPage = () => {
   };
 
   const loadDemoData = () => {
-    const spcRows = DEMO_SUBGROUPS.map((g, i) => {
-      const row: Record<string, any> = { Subgroup: i + 1 };
-      g.forEach((v, j) => { row[`M${j + 1}`] = v; });
-      return row;
-    });
-    appActions.addFile({
-      name: "demo-spc.xlsx",
-      sheets: [{ name: "SPC_Demo", headers: ["Subgroup", "M1", "M2", "M3", "M4", "M5"], rows: spcRows, matrix: [] }],
-      importedAt: new Date().toISOString(),
-    });
-    appActions.addFile({
-      name: "demo-msa.xlsx",
-      sheets: [{
-        name: "MSA_Demo",
-        headers: ["Part", "Operator", "Trial", "Measurement"],
-        rows: DEMO_MSA.map((e) => ({ Part: e.part, Operator: e.operator, Trial: e.trial, Measurement: e.value })),
-        matrix: [],
-      }],
-      importedAt: new Date().toISOString(),
-    });
-    appActions.setMapping({ measureCols: ["M1", "M2", "M3", "M4", "M5"], validated: true });
-    appActions.setSpecs({ subgroupSize: 5 });
-    toast.success("Données de démonstration chargées", { description: "SPC + MSA prêts pour test." });
-    notificationActions.add({ type: "info", title: "Données de démonstration chargées", message: "SPC + MSA prêts." });
+    if (isSpc) {
+      const spcRows = DEMO_SUBGROUPS.map((g, i) => {
+        const row: Record<string, any> = { Subgroup: i + 1 };
+        g.forEach((v, j) => { row[`M${j + 1}`] = v; });
+        return row;
+      });
+      appActions.addFile({
+        name: "demo-spc.xlsx",
+        sheets: [{ name: "SPC_Demo", headers: ["Subgroup", "M1", "M2", "M3", "M4", "M5"], rows: spcRows, matrix: [] }],
+        importedAt: new Date().toISOString(),
+      });
+      appActions.setMapping({ measureCols: ["M1", "M2", "M3", "M4", "M5"], validated: true });
+      appActions.setSpecs({ subgroupSize: 5 });
+      toast.success("Données SPC de démonstration chargées");
+    } else {
+      appActions.addFile({
+        name: "demo-msa.xlsx",
+        sheets: [{
+          name: "MSA_Demo",
+          headers: ["Part", "Operator", "Trial", "Measurement"],
+          rows: DEMO_MSA.map((e) => ({ Part: e.part, Operator: e.operator, Trial: e.trial, Measurement: e.value })),
+          matrix: [],
+        }],
+        importedAt: new Date().toISOString(),
+      });
+      toast.success("Données MSA de démonstration chargées");
+    }
+    notificationActions.add({ type: "info", title: "Données de démonstration chargées", message: `${isSpc ? "SPC" : "MSA"} prêt pour test.` });
   };
 
   return (
-    <AppLayout title="Données" subtitle="Importation, fusion et configuration des fichiers">
+    <AppLayout
+      title={isSpc ? "Données SPC" : "Données MSA (R&R)"}
+      subtitle={isSpc
+        ? "Importation et saisie des données de contrôle statistique"
+        : "Importation et saisie des données pour l'analyse R&R"}
+    >
+      {/* Back link */}
+      <div className="mb-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1.5 -ml-2 text-muted-foreground"
+          onClick={() => navigate("/data")}
+        >
+          <ChevronLeft className="w-4 h-4" />
+          Données
+        </Button>
+      </div>
 
       {/* ── Import methods ── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-5">
@@ -172,7 +202,7 @@ const DataPage = () => {
               <Play className="w-3.5 h-3.5" />
               Données de démo
             </Button>
-            {files.length > 1 && (
+            {modeFileIndices.length > 1 && (
               <Button
                 variant={showMerged ? "default" : "outline"}
                 size="sm"
@@ -190,30 +220,36 @@ const DataPage = () => {
             )}
           </div>
 
-          {/* Format hints */}
-          <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-x-5 gap-y-1">
-            <span className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">SPC</span> — Sous-groupe · Mesure1 · Mesure2…
-            </span>
-            <span className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">MSA</span> — Pièce · Opérateur · Essai · Valeur
-            </span>
-            <span className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">Capabilité</span> — Valeur (une colonne)
-            </span>
+          {/* Format hint */}
+          <div className="mt-3 pt-3 border-t border-border">
+            {isSpc ? (
+              <span className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">SPC</span> — Sous-groupe · Mesure1 · Mesure2…
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">MSA</span> — Pièce · Opérateur · Essai · Valeur
+              </span>
+            )}
           </div>
         </SectionCard>
 
         {/* Manual entry */}
         <SectionCard className="lg:col-span-2">
           <div className="h-full flex flex-col items-center justify-center text-center py-4 gap-4 min-h-[200px]">
-            <div className="w-14 h-14 rounded-2xl bg-muted flex items-center justify-center">
-              <TableProperties className="w-7 h-7 text-foreground" />
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isSpc ? "bg-blue-500/10" : "bg-violet-500/10"}`}>
+              {isSpc
+                ? <BarChart2 className="w-7 h-7 text-blue-500" />
+                : <Users className="w-7 h-7 text-violet-500" />
+              }
             </div>
             <div>
               <p className="font-semibold text-foreground">Saisie manuelle</p>
               <p className="text-sm text-muted-foreground mt-1.5 max-w-[220px] mx-auto leading-relaxed">
-                Créez un tableau de données ligne par ligne sans fichier Excel
+                {isSpc
+                  ? "Créez un tableau SPC (sous-groupes & mesures) sans fichier Excel"
+                  : "Créez un tableau MSA (Pièce · Opérateur · Essai · Valeur) sans fichier Excel"
+                }
               </p>
             </div>
             <Button onClick={() => setManualOpen(true)} variant="outline" className="gap-2">
@@ -224,13 +260,13 @@ const DataPage = () => {
         </SectionCard>
       </div>
 
-      {/* ── File list ── */}
-      {files.length > 0 && (
+      {/* ── File list (filtered by mode) ── */}
+      {modeFileIndices.length > 0 && (
         <SectionCard
           title={
             <span className="flex items-center justify-between w-full pr-1">
-              <span>Fichiers ({files.length})</span>
-              {files.length > 1 && mergedSheet && (
+              <span>Fichiers {isSpc ? "SPC" : "MSA"} ({modeFileIndices.length})</span>
+              {modeFileIndices.length > 1 && mergedSheet && (
                 <span className="text-xs font-normal text-muted-foreground flex items-center gap-1">
                   <Layers className="w-3.5 h-3.5 text-primary" />
                   Fusion : {mergedSheet.rows.length} lignes · {mergedSheet.headers.length} colonnes
@@ -241,12 +277,13 @@ const DataPage = () => {
           className="mb-5"
         >
           <div className="space-y-2">
-            {files.map((f, i) => {
+            {modeFileIndices.map((origIdx) => {
+              const f = files[origIdx];
               const totalRows = f.sheets.reduce((acc, s) => acc + s.rows.length, 0);
-              const isActive = i === activeFileIndex;
+              const isActive = origIdx === activeFileIndex;
               return (
                 <div
-                  key={i}
+                  key={origIdx}
                   className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-default ${
                     isActive ? "border-primary/40 bg-primary/5" : "border-border hover:bg-muted/40"
                   }`}
@@ -274,7 +311,7 @@ const DataPage = () => {
                       size="sm"
                       variant="ghost"
                       className="h-8 w-8 p-0"
-                      onClick={() => { appActions.setActiveFile(i); setShowMerged(false); setPreviewOpen(true); }}
+                      onClick={() => { appActions.setActiveFile(origIdx); setShowMerged(false); setPreviewOpen(true); }}
                       title="Prévisualiser"
                     >
                       <Eye className="w-4 h-4" />
@@ -283,7 +320,7 @@ const DataPage = () => {
                       size="sm"
                       variant="ghost"
                       className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => appActions.removeFile(i)}
+                      onClick={() => appActions.removeFile(origIdx)}
                       title="Supprimer"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -298,7 +335,7 @@ const DataPage = () => {
 
       {/* ── Specs ── */}
       <div className="mb-5">
-        <SpecsPanel />
+        {isSpc ? <SpecsPanel /> : <MSASpecsPanel />}
       </div>
 
       {/* ── Preview dialog ── */}
@@ -357,7 +394,7 @@ const DataPage = () => {
       </Dialog>
 
       <MappingWizard open={wizardOpen} onOpenChange={setWizardOpen} />
-      <ManualDataTable open={manualOpen} onOpenChange={setManualOpen} />
+      <ManualDataTable open={manualOpen} onOpenChange={setManualOpen} mode={mode} />
     </AppLayout>
   );
 };
