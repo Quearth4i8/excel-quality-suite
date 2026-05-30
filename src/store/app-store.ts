@@ -71,6 +71,46 @@ export const DEFAULT_MSA_PROJECT_SPECS: MSAProjectSpecs = {
   piece: "", characteristics: "", target: "", toleranceInf: "", toleranceSup: "",
 };
 
+export type UncertaintyDistribution = "uniform" | "triangular" | "trapezoidal" | "normal";
+
+export interface UncertaintyTypeBRow {
+  id: string;
+  name: string;
+  distribution: UncertaintyDistribution;
+  a: number;
+  k: number;
+  beta: number;
+}
+
+export interface UncertaintyState {
+  measurand: string;
+  unit: string;
+  operator: string;
+  date: string;
+  tolerance: string;
+  meas: string[];
+  bRows: UncertaintyTypeBRow[];
+  tAtelier: string;
+  lPlage: string;
+  kFactor: string;
+}
+
+export const DEFAULT_UNCERTAINTY: UncertaintyState = {
+  measurand: "",
+  unit: "",
+  operator: "",
+  date: "",
+  tolerance: "",
+  meas: Array(10).fill(""),
+  bRows: [
+    { id: "u-default-1", name: "Résolution instrument", distribution: "uniform", a: 0.005, k: 2, beta: 0 },
+    { id: "u-default-2", name: "Étalonnage",            distribution: "normal",  a: 0.010, k: 2, beta: 0 },
+  ],
+  tAtelier: "23",
+  lPlage: "25",
+  kFactor: "2",
+};
+
 export interface AppState {
   files: ParsedFile[];
   activeFileIndex: number | null;
@@ -82,6 +122,7 @@ export interface AppState {
   mapping: ColumnMapping;
   mergedSheet: ParsedSheet | null;
   msaProjectSpecs: MSAProjectSpecs;
+  uncertaintyState: UncertaintyState;
 }
 
 export const DEFAULT_SPECS: ProjectSpecs = {
@@ -178,6 +219,9 @@ function loadPersisted(): Partial<AppState> {
       fileSpecs: parsed.fileSpecs ?? {},
       filePerColumnSpecs: parsed.filePerColumnSpecs ?? {},
       msaProjectSpecs: parsed.msaProjectSpecs ?? DEFAULT_MSA_PROJECT_SPECS,
+      uncertaintyState: parsed.uncertaintyState
+        ? { ...DEFAULT_UNCERTAINTY, ...parsed.uncertaintyState }
+        : DEFAULT_UNCERTAINTY,
     };
   } catch {
     return {};
@@ -197,6 +241,7 @@ const store = new SimpleStore<AppState>({
   mapping: { ...DEFAULT_MAPPING, ...(persisted.mapping || {}) },
   mergedSheet: null,
   msaProjectSpecs: { ...DEFAULT_MSA_PROJECT_SPECS, ...(persisted.msaProjectSpecs || {}) },
+  uncertaintyState: persisted.uncertaintyState ?? DEFAULT_UNCERTAINTY,
 });
 
 function persist() {
@@ -211,6 +256,7 @@ function persist() {
         fileSpecs: s.fileSpecs,
         filePerColumnSpecs: s.filePerColumnSpecs,
         msaProjectSpecs: s.msaProjectSpecs,
+        uncertaintyState: s.uncertaintyState,
       })
     );
   } catch {}
@@ -479,6 +525,11 @@ export const appActions = {
 
   setMsaProjectSpecs: (patch: Partial<MSAProjectSpecs>) => {
     store.set({ msaProjectSpecs: { ...store.get().msaProjectSpecs, ...patch } });
+    persist();
+  },
+
+  setUncertaintyState: (patch: Partial<UncertaintyState>) => {
+    store.set({ uncertaintyState: { ...store.get().uncertaintyState, ...patch } });
     persist();
   },
 

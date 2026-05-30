@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { SectionCard } from "@/components/dashboard/SectionCard";
 import { Input } from "@/components/ui/input";
@@ -7,19 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2 } from "lucide-react";
 import { computeUncertaintyTypeA } from "@/lib/spc-engine";
+import { useAppStore, appActions } from "@/store/app-store";
+import type { UncertaintyDistribution, UncertaintyTypeBRow } from "@/store/app-store";
 
-// ── Types ──────────────────────────────────────────────────────────────────
-
-type Distribution = "uniform" | "triangular" | "trapezoidal" | "normal";
-
-interface TypeBRow {
-  id: string;
-  name: string;
-  distribution: Distribution;
-  a: number;
-  k: number;     // divisor for normal
-  beta: number;  // shape factor for trapezoidal [0,1]
-}
+// keep local alias so the rest of the file is unchanged
+type Distribution = UncertaintyDistribution;
+type TypeBRow = UncertaintyTypeBRow;
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -58,29 +51,23 @@ const DIST_FORMULA: Record<Distribution, string> = {
   normal:      "a / k",
 };
 
-let _idCounter = 0;
-const nextId = () => String(++_idCounter);
-
-const DEFAULT_B: TypeBRow[] = [
-  { id: nextId(), name: "Résolution instrument", distribution: "uniform", a: 0.005, k: 2, beta: 0 },
-  { id: nextId(), name: "Étalonnage",            distribution: "normal",  a: 0.010, k: 2, beta: 0 },
-];
+let _idCounter = 100;
+const nextId = () => `u-${++_idCounter}`;
 
 // ── Component ──────────────────────────────────────────────────────────────
 
 const UncertaintyPage = () => {
+  const us = useAppStore((s) => s.uncertaintyState);
+  const set = (patch: Parameters<typeof appActions.setUncertaintyState>[0]) =>
+    appActions.setUncertaintyState(patch);
 
-  // Project info
-  const [measurand,  setMeasurand]  = useState("");
-  const [unit,       setUnit]       = useState("");
-  const [operator,   setOperator]   = useState("");
-  const [date,       setDate]       = useState("");
-  const [tolerance,  setTolerance]  = useState("");
+  const { measurand, unit, operator, date, tolerance, meas, bRows, tAtelier, lPlage, kFactor } = us;
 
-  // Type A — 10 manual measurements
-  const [meas, setMeas] = useState<string[]>(Array(10).fill(""));
-  const setMeasAt = (i: number, v: string) =>
-    setMeas((prev) => prev.map((x, idx) => (idx === i ? v : x)));
+  const setMeasAt = (i: number, v: string) => {
+    const next = [...meas];
+    next[i] = v;
+    set({ meas: next });
+  };
 
   const validValues = useMemo(
     () => meas.filter((m) => m.trim() !== "").map(Number).filter((v) => !isNaN(v)),
@@ -89,24 +76,19 @@ const UncertaintyPage = () => {
   const typeA    = useMemo(() => computeUncertaintyTypeA(validValues), [validValues]);
   const hasTypeA = validValues.length >= 2;
 
-  // Type B — user-defined sources
-  const [bRows, setBRows] = useState<TypeBRow[]>(DEFAULT_B);
-  const addB    = () => setBRows((r) => [...r, { id: nextId(), name: "Nouvelle source", distribution: "uniform", a: 0.001, k: 2, beta: 0 }]);
-  const removeB = (id: string) => setBRows((r) => r.filter((x) => x.id !== id));
+  const addB = () =>
+    set({ bRows: [...bRows, { id: nextId(), name: "Nouvelle source", distribution: "uniform", a: 0.001, k: 2, beta: 0 }] });
+  const removeB = (id: string) =>
+    set({ bRows: bRows.filter((x) => x.id !== id) });
   const updateB = (id: string, patch: Partial<TypeBRow>) =>
-    setBRows((r) => r.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+    set({ bRows: bRows.map((x) => (x.id === id ? { ...x, ...patch } : x)) });
 
-  // Type B — temperature correction
-  const [tAtelier, setTAtelier] = useState<string>("23");
-  const [lPlage,   setLPlage]   = useState<string>("25");
   const tVal   = Number(tAtelier) || 0;
   const lVal   = Number(lPlage)   || 0;
   const deltaT = Math.abs(tVal - T_REF);
   const uTem   = (deltaT * ALPHA_INOX  * lVal) / Math.sqrt(2);
   const uCd    = (DELTA_ALPHA * deltaT * lVal) / Math.sqrt(3);
 
-  // Expanded uncertainty factor
-  const [kFactor, setKFactor] = useState("2");
   const k = Number(kFactor) || 2;
 
   // Budget — combines all sources
@@ -136,19 +118,19 @@ const UncertaintyPage = () => {
       <SectionCard title="Informations du mesurande" className="mb-5">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Field label="Mesurande">
-            <Input value={measurand} onChange={(e) => setMeasurand(e.target.value)} placeholder="ex. Longueur, Masse…" />
+            <Input value={measurand} onChange={(e) => set({ measurand: e.target.value })} placeholder="ex. Longueur, Masse…" />
           </Field>
           <Field label="Unité">
-            <Input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="ex. mm, g, °C…" />
+            <Input value={unit} onChange={(e) => set({ unit: e.target.value })} placeholder="ex. mm, g, °C…" />
           </Field>
           <Field label="Tolérance T (±)">
-            <Input type="number" step="any" value={tolerance} onChange={(e) => setTolerance(e.target.value)} placeholder="ex. 0.05" />
+            <Input type="number" step="any" value={tolerance} onChange={(e) => set({ tolerance: e.target.value })} placeholder="ex. 0.05" />
           </Field>
           <Field label="Opérateur">
-            <Input value={operator} onChange={(e) => setOperator(e.target.value)} placeholder="—" />
+            <Input value={operator} onChange={(e) => set({ operator: e.target.value })} placeholder="—" />
           </Field>
           <Field label="Date">
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input type="date" value={date} onChange={(e) => set({ date: e.target.value })} />
           </Field>
         </div>
       </SectionCard>
@@ -282,7 +264,7 @@ const UncertaintyPage = () => {
                         <Input
                           type="number"
                           value={tAtelier}
-                          onChange={(e) => setTAtelier(e.target.value)}
+                          onChange={(e) => set({ tAtelier: e.target.value })}
                           className="h-6 text-xs w-16 text-right"
                         />
                         <span className="text-muted-foreground">°C</span>
@@ -304,7 +286,7 @@ const UncertaintyPage = () => {
                         <Input
                           type="number"
                           value={lPlage}
-                          onChange={(e) => setLPlage(e.target.value)}
+                          onChange={(e) => set({ lPlage: e.target.value })}
                           className="h-6 text-xs w-16 text-right"
                         />
                         <span className="text-muted-foreground">mm</span>
@@ -431,7 +413,7 @@ const UncertaintyPage = () => {
             <div className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2">
               Facteur d'élargissement k
             </div>
-            <Select value={kFactor} onValueChange={setKFactor}>
+            <Select value={kFactor} onValueChange={(v) => set({ kFactor: v })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="1">k = 1  (p ≈ 68 %)</SelectItem>

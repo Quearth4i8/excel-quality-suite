@@ -20,6 +20,13 @@ const SPCPage = () => {
   const activeFileIndex = useAppStore((s) => s.activeFileIndex);
   const specs = useAppStore((s) => s.specs);
 
+  const spcFiles = files.filter((f) =>
+    f.sheets.some((s) => {
+      const k = detectSheet(s).kind;
+      return k === "spc" || k === "spc-card";
+    })
+  );
+
   // ── Explicit user selections (all local — zero global mapping used) ──
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [selectedSheetIdx, setSelectedSheetIdx] = useState(0);
@@ -29,9 +36,14 @@ const SPCPage = () => {
   const xbarRef = useRef<HTMLDivElement>(null);
 
   // ── Resolve exactly one file and one sheet — never touches merged data ──
-  const defaultFile = files[activeFileIndex ?? 0] ?? files[0] ?? null;
+  const activeFile = activeFileIndex !== null ? files[activeFileIndex] : null;
+  const activeIsSpc = activeFile?.sheets.some((s) => {
+    const k = detectSheet(s).kind;
+    return k === "spc" || k === "spc-card";
+  });
+  const defaultFile = (activeIsSpc ? activeFile : null) ?? spcFiles[0] ?? null;
   const selectedFile =
-    (selectedFileName ? files.find((f) => f.name === selectedFileName) ?? null : null) ?? defaultFile;
+    (selectedFileName ? spcFiles.find((f) => f.name === selectedFileName) ?? null : null) ?? defaultFile;
   const selectedSheet =
     selectedFile?.sheets[selectedSheetIdx] ?? selectedFile?.sheets[0] ?? null;
 
@@ -140,7 +152,7 @@ const SPCPage = () => {
     return { values: xbarR.subgroupMeans.slice(start, end), outOfControl: [zoomTarget - start], startOffset: start };
   }, [zoomTarget, xbarR]);
 
-  if (files.length === 0) {
+  if (spcFiles.length === 0) {
     return (
       <AppLayout title="Cartes SPC" subtitle={`${specs.projectName} · Contrôle statistique du procédé`}>
         <EmptyState
@@ -166,7 +178,7 @@ const SPCPage = () => {
             <Select value={selectedFile?.name ?? ""} onValueChange={handleFileChange}>
               <SelectTrigger><SelectValue placeholder="Sélectionner un fichier" /></SelectTrigger>
               <SelectContent>
-                {files.map((f) => (
+                {spcFiles.map((f) => (
                   <SelectItem key={f.name} value={f.name}>{f.name}</SelectItem>
                 ))}
               </SelectContent>
