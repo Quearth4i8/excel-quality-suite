@@ -305,12 +305,12 @@ const ReportsPage = () => {
             body: [
               ["Sous-groupes", String(subgroups.length)],
               ["Taille (n)", String(spc.n)],
-              ["X̿ (moy. des moy.)", spc.xbar.toFixed(4)],
-              ["R̄ (moy. étendues)", spc.rbar.toFixed(4)],
-              ["UCL X̄", spc.uclX.toFixed(4)],
-              ["LCL X̄", spc.lclX.toFixed(4)],
+              ["Moy. des moyennes", spc.xbar.toFixed(4)],
+              ["Moy. des étendues", spc.rbar.toFixed(4)],
+              ["UCL Xbarre", spc.uclX.toFixed(4)],
+              ["LCL Xbarre", spc.lclX.toFixed(4)],
               ["UCL R", spc.uclR.toFixed(4)],
-              ["σ̂ (court terme)", spc.sigmaHat.toFixed(4)],
+              ["Sigma-hat (court terme)", spc.sigmaHat.toFixed(4)],
               ["Points hors contrôle", String(spc.outOfControl.length)],
               ["Règles WE déclenchées", String(spc.westernElectric.length)],
             ],
@@ -453,7 +453,7 @@ const ReportsPage = () => {
         startSection("C. Annexes — Données sources (extrait)", 1);
         autoTable(doc, {
           startY: 24,
-          head: [["#", ...Array.from({ length: spc.n }, (_, i) => `M${i + 1}`), "X̄", "R"]],
+          head: [["#", ...Array.from({ length: spc.n }, (_, i) => `M${i + 1}`), "Xbarre", "R"]],
           body: subgroups.slice(0, 25).map((g, i) => [
             String(i + 1), ...g.map((v) => v.toFixed(3)),
             spc.subgroupMeans[i].toFixed(3), spc.subgroupRanges[i].toFixed(3),
