@@ -849,7 +849,7 @@ const ReportsPage = () => {
 
       {/* ── Specs panel (contextual) ── */}
       <div className="mb-5">
-        {reportType === "spc" ? <SpecsPanel /> : <MSASpecsPanel />}
+        {reportType === "spc" ? <SpecsPanel kindFilter="spc" /> : <MSASpecsPanel showFilePicker />}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">

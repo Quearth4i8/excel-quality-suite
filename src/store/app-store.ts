@@ -482,28 +482,36 @@ export const appActions = {
   },
   getSheetForKind: (kind: "spc" | "msa"): ParsedSheet | null => {
     const s = store.get();
+    const matchesKind = (sh: ParsedSheet) => {
+      const detected = detectSheet(sh).kind;
+      return (
+        detected === kind ||
+        (kind === "msa" && detected === "msa-rr") ||
+        (kind === "spc" && detected === "spc-card")
+      );
+    };
+    // Prefer the active file's matching sheet first
+    if (s.activeFileIndex !== null) {
+      const activeFile = s.files[s.activeFileIndex];
+      if (activeFile) {
+        const sh = activeFile.sheets.find(matchesKind);
+        if (sh) return sh;
+      }
+    }
+    // Fall back to searching all files
     let fallbackSheet: ParsedSheet | null = null;
     for (const f of s.files) {
       for (const sh of f.sheets) {
-        const detected = detectSheet(sh).kind;
-        if (
-          detected === kind ||
-          (kind === "msa" && detected === "msa-rr") ||
-          (kind === "spc" && detected === "spc-card")
-        )
-          return sh;
+        if (matchesKind(sh)) return sh;
         if (kind === "msa" && !fallbackSheet && s.mapping.partCol && s.mapping.operatorCol) {
           const hasPart = sh.headers.includes(s.mapping.partCol);
           const hasOperator = sh.headers.includes(s.mapping.operatorCol);
           const hasValue = !s.mapping.valueCol || sh.headers.includes(s.mapping.valueCol);
-          if (hasPart && hasOperator && hasValue) {
-            fallbackSheet = sh;
-          }
+          if (hasPart && hasOperator && hasValue) fallbackSheet = sh;
         }
       }
     }
-    if (fallbackSheet) return fallbackSheet;
-    return null;
+    return fallbackSheet;
   },
   clearFiles: () => {
     store.set({

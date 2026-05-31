@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Target, FileSpreadsheet } from "lucide-react";
 import { computeXbarR } from "@/lib/spc-engine";
+import { detectSheet } from "@/lib/auto-detect";
 import {
   Select,
   SelectContent,
@@ -37,8 +38,19 @@ const ComputedLimit = ({
   </div>
 );
 
-export const SpecsPanel = () => {
-  const files = useAppStore((s) => s.files);
+export const SpecsPanel = ({ kindFilter }: { kindFilter?: "spc" | "msa" } = {}) => {
+  const allFiles = useAppStore((s) => s.files);
+  const files = useMemo(() => {
+    if (!kindFilter) return allFiles;
+    return allFiles.filter((f) =>
+      f.sheets.some((sh) => {
+        const k = detectSheet(sh).kind;
+        if (kindFilter === "spc") return k === "spc" || k === "spc-card";
+        if (kindFilter === "msa") return k === "msa" || k === "msa-rr";
+        return false;
+      })
+    );
+  }, [allFiles, kindFilter]);
   const activeFileIndex = useAppStore((s) => s.activeFileIndex);
   const fileSpecs = useAppStore((s) => s.fileSpecs);
   const globalSpecs = useAppStore((s) => s.specs);

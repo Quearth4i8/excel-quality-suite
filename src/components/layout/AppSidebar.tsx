@@ -7,7 +7,6 @@ import {
   Users,
   Ruler,
   FileText,
-  Settings,
   Activity,
   Shield,
 } from "lucide-react";
@@ -22,7 +21,6 @@ const items = [
   { to: "/msa", label: "MSA (R&R)", icon: Users },
   { to: "/uncertainty", label: "Incertitude", icon: Ruler },
   { to: "/reports", label: "Rapports", icon: FileText },
-  { to: "/settings", label: "Paramètres", icon: Settings },
 ];
 
 const adminItem = { to: "/admin", label: "Administration", icon: Shield };

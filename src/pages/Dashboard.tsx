@@ -6,10 +6,12 @@ import { ControlChart } from "@/components/charts/ControlChart";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { useAppStore, appActions, absLimits } from "@/store/app-store";
+import type { UncertaintyTypeBRow } from "@/store/app-store";
 import {
   computeXbarR,
   computeCapability,
   computeMSA,
+  computeUncertaintyTypeA,
   buildHistogram,
   normalPdf,
   mean,
@@ -17,6 +19,20 @@ import {
   buildXbarRefLines,
   buildRRefLines,
 } from "@/lib/spc-engine";
+
+// Same constants and helper as UncertaintyPage
+const T_REF        = 20;
+const ALPHA_INOX   = 11.5e-6;
+const DELTA_ALPHA  = 5e-6;
+function computeUB(row: UncertaintyTypeBRow): number {
+  if (row.a <= 0) return 0;
+  switch (row.distribution) {
+    case "normal":      return row.a / Math.max(row.k, 1);
+    case "uniform":     return row.a / Math.sqrt(3);
+    case "triangular":  return row.a / Math.sqrt(6);
+    case "trapezoidal": return row.a * Math.sqrt((1 + Math.max(0, Math.min(1, row.beta)) ** 2) / 6);
+  }
+}
 import {
   Bar,
   XAxis,
@@ -37,6 +53,7 @@ const Dashboard = () => {
   const specs = useAppStore((s) => s.specs);
   const mapping = useAppStore((s) => s.mapping);
   const filesCount = useAppStore((s) => s.files.length);
+  const uncertaintyState = useAppStore((s) => s.uncertaintyState);
 
   // Sheets dedicated to each analysis kind (auto-detected at import).
   const spcSheet = useAppStore(() => appActions.getSheetForKind("spc"));
@@ -61,6 +78,12 @@ const Dashboard = () => {
   const flatValues = useMemo(() => subgroups.flat(), [subgroups]);
   const hasSpc = subgroups.length > 0;
 
+  // Row ranges — same method as CapabilityPage for σᵢ estimation
+  const rowRanges = useMemo(
+    () => subgroups.map((g) => Math.max(...g) - Math.min(...g)),
+    [subgroups]
+  );
+
   // MSA entries — STRICTLY from imported MSA file.
   const msaEntries = useMemo<MSAEntry[]>(() => {
     if (!msaSheet || !mapping.partCol || !mapping.operatorCol || !mapping.valueCol) return [];
@@ -75,23 +98,61 @@ const Dashboard = () => {
   }, [msaSheet, mapping]);
   const hasMsa = msaEntries.length > 0;
 
-  // Compute on imported data only
+  // Compute on imported data only — same methods as CapabilityPage
   const spc = useMemo(() => (hasSpc ? computeXbarR(subgroups) : null), [hasSpc, subgroups]);
-  const cap = useMemo(
-    () => { const { lsl, usl } = absLimits(specs); return hasSpc ? computeCapability(flatValues, lsl, usl, specs.target, specs.subgroupSize) : null; },
-    [hasSpc, flatValues, specs]
-  );
+  const cap = useMemo(() => {
+    if (!hasSpc) return null;
+    const { lsl, usl } = absLimits(specs);
+    const n = Math.min(Math.max(mapping.measureCols.length, 2), 10);
+    return computeCapability(flatValues, lsl, usl, specs.target, n, rowRanges.length > 0 ? rowRanges : undefined);
+  }, [hasSpc, flatValues, rowRanges, mapping.measureCols.length, specs]);
   const msa = useMemo(() => (hasMsa ? computeMSA(msaEntries) : null), [hasMsa, msaEntries]);
+
+  // Uncertainty — full GUM budget from UncertaintyPage state (same computation)
+  const uValidValues = useMemo(
+    () => uncertaintyState.meas.filter((m) => m.trim() !== "").map(Number).filter((v) => !isNaN(v)),
+    [uncertaintyState.meas]
+  );
+  const hasUncertaintyData = uValidValues.length >= 2;
+  const uTypeA = useMemo(() => (hasUncertaintyData ? computeUncertaintyTypeA(uValidValues) : null), [hasUncertaintyData, uValidValues]);
+  const kFactor = Number(uncertaintyState.kFactor) || 2;
+
+  const uBudget = useMemo(() => {
+    if (!hasUncertaintyData || !uTypeA) return null;
+    const tVal  = Number(uncertaintyState.tAtelier) || 0;
+    const lVal  = Number(uncertaintyState.lPlage)   || 0;
+    const deltaT = Math.abs(tVal - T_REF);
+    const uTem  = (deltaT * ALPHA_INOX  * lVal) / Math.sqrt(2);
+    const uCd   = (DELTA_ALPHA * deltaT * lVal) / Math.sqrt(3);
+    let totalU2 = uTypeA.uA ** 2;
+    uncertaintyState.bRows.forEach((r) => { const u = computeUB(r); totalU2 += u * u; });
+    if (uTem > 0) totalU2 += uTem * uTem;
+    if (uCd  > 0) totalU2 += uCd  * uCd;
+    const uC = Math.sqrt(totalU2);
+    return { uA: uTypeA.uA, uC, U: kFactor * uC, s: uTypeA.s, n: uTypeA.n };
+  }, [hasUncertaintyData, uTypeA, uncertaintyState, kFactor]);
+
+  // Fallback: derive from SPC sigma when no uncertainty data entered
+  const uVal    = uBudget ? uBudget.U : cap && cap.stdLongTerm > 0 ? (cap.stdLongTerm / Math.sqrt(flatValues.length)) * 2 : 0;
+  const uStdDev = uBudget ? uBudget.s : cap?.stdLongTerm ?? 0;
+  const uN      = uBudget ? uBudget.n : flatValues.length;
 
   const hist = useMemo(() => {
     if (!cap || flatValues.length === 0) return [];
-    const h = buildHistogram(flatValues, 18);
+    const BIN_WIDTH = 0.01;
+    const rawLo = Math.min(...flatValues);
+    const rawHi = Math.max(...flatValues);
+    const snappedLo = Math.floor(rawLo / BIN_WIDTH) * BIN_WIDTH - BIN_WIDTH / 2;
+    const snappedHi = Math.ceil(rawHi / BIN_WIDTH) * BIN_WIDTH + BIN_WIDTH / 2;
+    const bins = Math.max(1, Math.round((snappedHi - snappedLo) / BIN_WIDTH));
+    const h = buildHistogram(flatValues, bins, snappedLo, snappedHi);
+    const mu = cap.mean;
     const sigma = cap.stdLongTerm || 0.001;
     const maxCount = Math.max(...h.map((d) => d.count), 1);
-    const maxPdf = normalPdf(cap.mean, cap.mean, sigma);
+    const maxPdf = normalPdf(mu, mu, sigma);
     return h.map((d) => ({
       ...d,
-      pdf: maxPdf > 0 ? (normalPdf(d.bin, cap.mean, sigma) / maxPdf) * maxCount : 0,
+      pdf: maxPdf > 0 ? (normalPdf(d.bin, mu, sigma) / maxPdf) * maxCount : 0,
     }));
   }, [flatValues, cap]);
 
@@ -115,11 +176,25 @@ const Dashboard = () => {
   }
 
   const isInControl = spc ? spc.outOfControl.length === 0 : true;
+
+  // Histogram chart geometry — same approach as CapabilityPage
+  const eff = absLimits(specs);
+  const histDataMin = flatValues.length ? Math.min(...flatValues) : eff.lsl;
+  const histDataMax = flatValues.length ? Math.max(...flatValues) : eff.usl;
+  const xMin = Math.min(eff.lsl, histDataMin);
+  const xMax = Math.max(eff.usl, histDataMax);
+  const xPad = (xMax - xMin) * 0.05;
+  const xDomain: [number, number] = [xMin - xPad, xMax + xPad];
+  const xTicks = hist.length <= 5
+    ? hist.map((d) => d.bin)
+    : [0, Math.floor(hist.length / 4), Math.floor(hist.length / 2), Math.floor((3 * hist.length) / 4), hist.length - 1].map((i) => hist[i].bin);
+  const barSize = hist.length > 1
+    ? Math.max(3, Math.round(400 * (hist[1].bin - hist[0].bin) / (xDomain[1] - xDomain[0])))
+    : 10;
   const trendMean = spc?.subgroupMeans ?? [];
   const trendRange = spc?.subgroupRanges ?? [];
   const trendCpk = cap ? trendMean.map((m) => Math.abs(cap.cpk + (m - cap.mean) * 5)) : [];
   const trendPpk = cap ? trendMean.map((m) => Math.abs(cap.ppk + (m - cap.mean) * 4)) : [];
-  const uVal = cap && cap.stdLongTerm > 0 ? (cap.stdLongTerm / Math.sqrt(flatValues.length)) * 2 : 0;
   const trendU = trendMean.map(() => uVal);
 
   const msaPie = msa
@@ -231,8 +306,8 @@ const Dashboard = () => {
           <SectionCard title="3. Capabilité Process">
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-1 space-y-2 text-sm">
-                <Spec label="USL (Limite sup.)" value={`${absLimits(specs).usl.toFixed(4)} ${specs.unit}`} />
-                <Spec label="LSL (Limite inf.)" value={`${absLimits(specs).lsl.toFixed(4)} ${specs.unit}`} />
+                <Spec label="USL (Limite sup.)" value={`${eff.usl.toFixed(4)} ${specs.unit}`} />
+                <Spec label="LSL (Limite inf.)" value={`${eff.lsl.toFixed(4)} ${specs.unit}`} />
                 <Spec label="Cible (Target)" value={`${specs.target} ${specs.unit}`} />
                 <Spec label="Moyenne (X̄)" value={`${cap.mean.toFixed(3)} ${specs.unit}`} />
                 <Spec label="Écart type (σ)" value={`${cap.stdLongTerm.toFixed(3)} ${specs.unit}`} />
@@ -241,13 +316,17 @@ const Dashboard = () => {
                 <ResponsiveContainer>
                   <ComposedChart data={hist} margin={{ top: 10, right: 5, left: -20, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="label" tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
+                    <XAxis dataKey="bin" type="number" domain={xDomain} ticks={xTicks} tickFormatter={(v: number) => v.toFixed(4)} tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
                     <YAxis tick={{ fontSize: 9 }} stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", fontSize: 11 }} />
-                    <ReferenceLine x={absLimits(specs).lsl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="3 3" label={{ value: "LSL", fill: "hsl(var(--destructive))", fontSize: 10 }} />
-                    <ReferenceLine x={absLimits(specs).usl.toFixed(2)} stroke="hsl(var(--destructive))" strokeDasharray="3 3" label={{ value: "USL", fill: "hsl(var(--destructive))", fontSize: 10 }} />
-                    <ReferenceLine x={specs.target.toFixed(2)} stroke="hsl(var(--success))" strokeDasharray="3 3" label={{ value: "Cible", fill: "hsl(var(--success))", fontSize: 10 }} />
-                    <Bar dataKey="count" fill="hsl(var(--primary))" opacity={0.8} radius={[2, 2, 0, 0]} />
+                    <Tooltip
+                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", fontSize: 11 }}
+                      formatter={(value: number) => typeof value === "number" ? value.toFixed(4) : value}
+                      labelFormatter={(label: number) => typeof label === "number" ? label.toFixed(4) : label}
+                    />
+                    <ReferenceLine x={eff.lsl} stroke="hsl(var(--destructive))" strokeDasharray="3 3" label={{ value: "LSL", fill: "hsl(var(--destructive))", fontSize: 10 }} />
+                    <ReferenceLine x={eff.usl} stroke="hsl(var(--destructive))" strokeDasharray="3 3" label={{ value: "USL", fill: "hsl(var(--destructive))", fontSize: 10 }} />
+                    <ReferenceLine x={specs.target} stroke="hsl(var(--success))" strokeDasharray="3 3" label={{ value: "Cible", fill: "hsl(var(--success))", fontSize: 10 }} />
+                    <Bar dataKey="count" fill="hsl(var(--primary))" opacity={0.7} barSize={barSize} radius={[2, 2, 0, 0]} />
                     <Line type="monotone" dataKey="pdf" stroke="hsl(var(--purple))" strokeWidth={2} dot={false} />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -265,12 +344,12 @@ const Dashboard = () => {
             <div className="grid grid-cols-2 gap-4 items-center">
               <UncertaintyGauge value={uVal} max={Math.max(uVal * 2, 0.02)} />
               <div className="space-y-2 text-sm">
-                <Spec label="Type d'incertitude" value="Type A" />
-                <Spec label="N (mesures)" value={String(flatValues.length)} />
-                <Spec label="Écart type (s)" value={cap.stdLongTerm.toFixed(4) + " " + specs.unit} />
-                <Spec label="Incertitude (u)" value={(uVal / 2).toFixed(5) + " " + specs.unit} />
+                <Spec label="Type d'incertitude" value={hasUncertaintyData ? "Type A (GUM)" : "Type A (dérivé SPC)"} />
+                <Spec label="N (mesures)" value={String(uN)} />
+                <Spec label="Écart type (s)" value={uStdDev.toFixed(4) + " " + specs.unit} />
+                <Spec label="Incertitude (u)" value={(uVal / kFactor).toFixed(5) + " " + specs.unit} />
                 <Spec label="Incertitude élargie (U)" value={uVal.toFixed(5) + " " + specs.unit} />
-                <Spec label="Facteur k" value="2" />
+                <Spec label="Facteur k" value={String(kFactor)} />
               </div>
             </div>
           </SectionCard>

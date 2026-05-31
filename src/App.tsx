@@ -14,7 +14,6 @@ import CapabilityPage from "./pages/CapabilityPage";
 import MSAPage from "./pages/MSAPage";
 import UncertaintyPage from "./pages/UncertaintyPage";
 import ReportsPage from "./pages/ReportsPage";
-import SettingsPage from "./pages/SettingsPage";
 import LoginPage from "./pages/LoginPage";
 import AdminPage from "./pages/AdminPage";
 import NotFound from "./pages/NotFound.tsx";
@@ -99,14 +98,6 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <ReportsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <ProtectedRoute>
-                  <SettingsPage />
                 </ProtectedRoute>
               }
             />
