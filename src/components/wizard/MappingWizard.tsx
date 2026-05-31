@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAppStore, appActions, ColumnMapping } from "@/store/app-store";
 import { CheckCircle2, AlertTriangle, ArrowRight, ArrowLeft, Wand2 } from "lucide-react";
 import { toast } from "sonner";
+import { notificationActions } from "@/lib/notifications";
 
 interface Props {
   open: boolean;
@@ -92,6 +93,11 @@ export const MappingWizard = ({ open, onOpenChange }: Props) => {
     appActions.setMapping({ ...draft, validated: true });
     appActions.setSpecs(draftSpecs);
     toast.success("Configuration validée", { description: "Vos analyses utilisent maintenant ce mappage." });
+    notificationActions.add({
+      type: "success",
+      title: "Configuration validée",
+      message: "Vos analyses utilisent maintenant ce mappage.",
+    });
     onOpenChange(false);
     setStep(0);
   };

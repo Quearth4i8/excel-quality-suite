@@ -29,10 +29,10 @@ export const max = (a: number[]) => Math.max(...a);
 
 // ===== X-bar / R chart =====
 export interface XbarRResult {
-  subgroupMeans: number[];
-  subgroupRanges: number[];
-  xbar: number;
-  rbar: number;
+  subgroupMeans: number[];   // X̄ᵢ — mean of each subgroup row
+  subgroupRanges: number[];  // Rᵢ — range (max−min) of each subgroup row
+  xbar: number;              // X̿ — mean of all subgroup means (used in all limit calculations)
+  rbar: number;              // R̄ — mean of all ranges
   uclX: number;
   lclX: number;
   clX: number;
@@ -81,6 +81,31 @@ export function computeXbarR(subgroups: number[][]): XbarRResult {
     westernElectric: we,
     n,
   };
+}
+
+// ===== Reference line builders =====
+export interface RefLine { y: number; label: string; color: string; }
+
+export function buildXbarRefLines(result: XbarRResult): RefLine[] {
+  const { xbar, rbar } = result;
+  return [
+    { y: xbar + 0.594 * rbar, label: "LCS", color: "hsl(var(--destructive))" },
+    { y: xbar + 0.377 * rbar, label: "LSS", color: "hsl(var(--warning))" },
+    { y: xbar,                label: "X̿",  color: "hsl(var(--success))" },
+    { y: xbar - 0.377 * rbar, label: "LSI", color: "hsl(var(--warning))" },
+    { y: xbar - 0.594 * rbar, label: "LCI", color: "hsl(var(--destructive))" },
+  ];
+}
+
+export function buildRRefLines(result: XbarRResult): RefLine[] {
+  const { uclR, clR, lclR } = result;
+  return [
+    { y: uclR,                                        label: "LCS", color: "hsl(var(--destructive))" },
+    { y: clR + (uclR - clR) * (2 / 3),               label: "LSS", color: "hsl(var(--warning))" },
+    { y: clR,                                         label: "R̄",  color: "hsl(var(--success))" },
+    { y: Math.max(0, clR - (clR - lclR) * (2 / 3)), label: "LSI", color: "hsl(var(--warning))" },
+    { y: lclR,                                        label: "LCI", color: "hsl(var(--destructive))" },
+  ];
 }
 
 // ===== X-bar / S chart =====
@@ -170,23 +195,42 @@ export interface CapabilityResult {
   status: "capable" | "improve" | "not_capable";
 }
 
-export function computeCapability(values: number[], lsl: number, usl: number, target?: number, subgroupSize?: number): CapabilityResult {
+export function computeCapability(
+  values: number[],
+  lsl: number,
+  usl: number,
+  target?: number,
+  subgroupSize?: number,
+  ranges?: number[] // pre-computed subgroup ranges (e.g. row ranges for multi-column data)
+): CapabilityResult {
   const m = mean(values);
+
+  // σg = √(Σ(xi − X̿)² / (N−1))  — global long-term std (sample std)
   const sLong = stdev(values);
-  let sShort = sLong;
-  if (subgroupSize && subgroupSize >= 2 && subgroupSize <= 10) {
-    // estimate from subgroups
+
+  // σi = R̄ / d2  — within-subgroup short-term std
+  const n = (subgroupSize && subgroupSize >= 2 && subgroupSize <= 10) ? subgroupSize : 5;
+  let sShort = sLong; // fallback when not enough data
+  if (ranges && ranges.length > 0) {
+    // Use pre-computed ranges (row ranges in multi-column analysis: each row = one subgroup)
+    sShort = mean(ranges) / SPC_CONSTANTS[n].d2;
+  } else {
+    // Estimate σi from consecutive subgroups within a single column
     const subgroups: number[][] = [];
-    for (let i = 0; i < values.length; i += subgroupSize) subgroups.push(values.slice(i, i + subgroupSize));
-    const completeSubs = subgroups.filter((s) => s.length === subgroupSize);
+    for (let i = 0; i < values.length; i += n) subgroups.push(values.slice(i, i + n));
+    const completeSubs = subgroups.filter((s) => s.length === n);
     if (completeSubs.length > 0) {
-      const rbar = mean(completeSubs.map(range));
-      sShort = rbar / SPC_CONSTANTS[subgroupSize].d2;
+      sShort = mean(completeSubs.map(range)) / SPC_CONSTANTS[n].d2;
     }
   }
+
+  // CP = (USL − LSL) / (6 σi)
   const cp = (usl - lsl) / (6 * sShort);
+  // CPK = min( (USL − X̿)/(3 σi),  (X̿ − LSL)/(3 σi) )
   const cpk = Math.min((usl - m) / (3 * sShort), (m - lsl) / (3 * sShort));
+  // PP = (USL − LSL) / (6 σg)
   const pp = (usl - lsl) / (6 * sLong);
+  // PPK = min( (USL − X̿)/(3 σg),  (X̿ − LSL)/(3 σg) )
   const ppk = Math.min((usl - m) / (3 * sLong), (m - lsl) / (3 * sLong));
   const cpm = target !== undefined ? (usl - lsl) / (6 * Math.sqrt(sLong ** 2 + (m - target) ** 2)) : undefined;
 
@@ -204,20 +248,22 @@ export function computeCapability(values: number[], lsl: number, usl: number, ta
 }
 
 // ===== Histogram =====
-export function buildHistogram(values: number[], bins = 20) {
+export function buildHistogram(values: number[], bins = 20, loOverride?: number, hiOverride?: number) {
   if (values.length === 0) return [];
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
+  const lo = loOverride ?? Math.min(...values);
+  const hi = hiOverride ?? Math.max(...values);
   const w = (hi - lo) / bins || 1;
   const counts = Array(bins).fill(0);
   values.forEach((v) => {
     const idx = Math.min(bins - 1, Math.floor((v - lo) / w));
     counts[idx]++;
   });
+  // Pick label precision so bin centres are distinct
+  const decimals = w < 0.0001 ? 5 : w < 0.001 ? 4 : w < 0.01 ? 3 : w < 0.1 ? 2 : 1;
   return counts.map((c, i) => ({
     bin: lo + i * w + w / 2,
     count: c,
-    label: (lo + i * w + w / 2).toFixed(2),
+    label: (lo + i * w + w / 2).toFixed(decimals),
   }));
 }
 
@@ -226,7 +272,7 @@ export function normalPdf(x: number, mu: number, sigma: number) {
   return (1 / (sigma * Math.sqrt(2 * Math.PI))) * Math.exp(-((x - mu) ** 2) / (2 * sigma ** 2));
 }
 
-// ===== MSA / Gage R&R (Average & Range method) =====
+// ===== MSA / Gage R&R (Average & Range method — AIAG K constants) =====
 export interface MSAEntry {
   part: string | number;
   operator: string | number;
@@ -234,24 +280,75 @@ export interface MSAEntry {
   value: number;
 }
 
+// K1 = 1/d2* for the number of trials (repeatability)
+export const MSA_K1: Record<number, number> = {
+  2: 0.8862,
+  3: 0.5908,
+};
+
+// K2 = 1/d2* for the number of appraisers/operators (reproducibility)
+export const MSA_K2: Record<number, number> = {
+  2: 0.7071,
+  3: 0.5231,
+};
+
+// K3 = 1/d2* for the number of parts (part variation)
+export const MSA_K3: Record<number, number> = {
+  2: 0.7071,
+  3: 0.5231,
+  4: 0.4467,
+  5: 0.4030,
+  6: 0.3742,
+  7: 0.3534,
+  8: 0.3375,
+  9: 0.3249,
+  10: 0.3146,
+};
+
+function getK1(r: number): number {
+  const clamped = Math.min(Math.max(r, 2), 3);
+  return MSA_K1[clamped] ?? MSA_K1[2];
+}
+function getK2(g: number): number {
+  const clamped = Math.min(Math.max(g, 2), 3);
+  return MSA_K2[clamped] ?? MSA_K2[2];
+}
+function getK3(p: number): number {
+  const clamped = Math.min(Math.max(p, 2), 10);
+  return MSA_K3[clamped] ?? MSA_K3[10];
+}
+
 export interface MSAResult {
-  ev: number; // repeatability
-  av: number; // reproducibility
-  grr: number;
-  pv: number; // part variation
-  tv: number; // total variation
+  // Main metrics (AIAG range method)
+  ev: number;   // EV = R̄ × K1  (Equipment Variation / Repeatability)
+  av: number;   // AV = √((X̄DIFF × K2)² − EV²/(n·r))  (Appraiser Variation / Reproducibility)
+  grr: number;  // R&R = √(EV² + AV²)
+  pv: number;   // PV = Rp × K3  (Part Variation)
+  tv: number;   // TV = √(R&R² + PV²)
+  // Percentages
   evPct: number;
   avPct: number;
   grrPct: number;
   pvPct: number;
-  ndc: number; // number of distinct categories
+  // Variance contributions
   evContrib: number;
   avContrib: number;
   grrContrib: number;
   pvContrib: number;
+  // ndc
+  ndc: number;
+  // Study dimensions
   parts: number;
   operators: number;
   trials: number;
+  // Intermediate values for formula display
+  rbar: number;   // R̄ — average of ranges
+  xDiff: number;  // X̄DIFF — range of operator averages
+  rp: number;     // Rp — range of part averages
+  k1: number;
+  k2: number;
+  k3: number;
+  // Status
   interpretation: string;
   status: "excellent" | "acceptable" | "improve";
 }
@@ -263,7 +360,7 @@ export function computeMSA(entries: MSAEntry[]): MSAResult {
   const parts = partsSet.length;
   const operators = opsSet.length;
 
-  // values[op][part] = trials[]
+  // data[op][part] = trials[]
   const data: Record<string, Record<string, number[]>> = {};
   opsSet.forEach((o) => {
     data[o] = {};
@@ -275,53 +372,54 @@ export function computeMSA(entries: MSAEntry[]): MSAResult {
 
   const trials = Math.max(...opsSet.flatMap((o) => partsSet.map((p) => data[o][p].length)));
 
-  // Range per (op,part)
+  // ── EV = R̄ × K1 ──
   const ranges: number[] = [];
   opsSet.forEach((o) => partsSet.forEach((p) => {
     const t = data[o][p];
     if (t.length > 1) ranges.push(range(t));
   }));
   const rbar = mean(ranges);
-  const dStar = SPC_CONSTANTS[Math.min(Math.max(trials, 2), 10)].d2;
-  const ev = rbar / dStar;
+  const k1 = getK1(trials);
+  const ev = rbar * k1;
 
-  // Operator means
+  // ── AV = √((X̄DIFF × K2)² − EV²/(n·r)) ──
   const opMeans = opsSet.map((o) => {
     const all: number[] = [];
     partsSet.forEach((p) => all.push(...data[o][p]));
     return mean(all);
   });
   const xDiff = max(opMeans) - min(opMeans);
-  const dStarOp = SPC_CONSTANTS[Math.min(Math.max(operators, 2), 10)].d2;
-  const avSquared = (xDiff / dStarOp) ** 2 - (ev ** 2) / (parts * trials);
+  const k2 = getK2(operators);
+  const avSquared = (xDiff * k2) ** 2 - ev ** 2 / (parts * trials);
   const av = Math.sqrt(Math.max(0, avSquared));
 
+  // ── R&R = √(EV² + AV²) ──
   const grr = Math.sqrt(ev ** 2 + av ** 2);
 
-  // Part variation: range of part averages across operators
+  // ── PV = Rp × K3 ──
   const partAverages = partsSet.map((p) => {
     const all: number[] = [];
     opsSet.forEach((o) => all.push(...data[o][p]));
     return mean(all);
   });
   const rp = max(partAverages) - min(partAverages);
-  const dStarPart = SPC_CONSTANTS[Math.min(Math.max(parts, 2), 10)].d2;
-  const pv = rp / dStarPart;
+  const k3 = getK3(parts);
+  const pv = rp * k3;
 
+  // ── TV = √(R&R² + PV²) ──
   const tv = Math.sqrt(grr ** 2 + pv ** 2);
 
-  const evPct = (ev / tv) * 100;
-  const avPct = (av / tv) * 100;
-  const grrPct = (grr / tv) * 100;
-  const pvPct = (pv / tv) * 100;
+  const evPct = tv > 0 ? (ev / tv) * 100 : 0;
+  const avPct = tv > 0 ? (av / tv) * 100 : 0;
+  const grrPct = tv > 0 ? (grr / tv) * 100 : 0;
+  const pvPct = tv > 0 ? (pv / tv) * 100 : 0;
 
-  // contribution = variance ratios
-  const evContrib = (ev ** 2 / tv ** 2) * 100;
-  const avContrib = (av ** 2 / tv ** 2) * 100;
-  const grrContrib = (grr ** 2 / tv ** 2) * 100;
-  const pvContrib = (pv ** 2 / tv ** 2) * 100;
+  const evContrib = tv > 0 ? (ev ** 2 / tv ** 2) * 100 : 0;
+  const avContrib = tv > 0 ? (av ** 2 / tv ** 2) * 100 : 0;
+  const grrContrib = tv > 0 ? (grr ** 2 / tv ** 2) * 100 : 0;
+  const pvContrib = tv > 0 ? (pv ** 2 / tv ** 2) * 100 : 0;
 
-  const ndc = Math.floor(1.41 * (pv / grr));
+  const ndc = grr > 0 ? Math.floor(1.41 * (pv / grr)) : 0;
 
   let status: MSAResult["status"] = "improve";
   let interpretation = "Système de mesure à améliorer (>30%)";
@@ -330,14 +428,15 @@ export function computeMSA(entries: MSAEntry[]): MSAResult {
     interpretation = "Système de mesure excellent (<10%)";
   } else if (grrPct <= 30) {
     status = "acceptable";
-    interpretation = "Système de mesure acceptable (10-30%)";
+    interpretation = "Système de mesure acceptable (10–30%)";
   }
 
   return {
     ev, av, grr, pv, tv,
     evPct, avPct, grrPct, pvPct,
-    ndc, evContrib, avContrib, grrContrib, pvContrib,
-    parts, operators, trials,
+    evContrib, avContrib, grrContrib, pvContrib,
+    ndc, parts, operators, trials,
+    rbar, xDiff, rp, k1, k2, k3,
     interpretation, status,
   };
 }

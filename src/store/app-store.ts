@@ -1,6 +1,7 @@
 import type { ParsedFile, ParsedSheet } from "@/lib/excel";
 import { useSyncExternalStore } from "react";
 import { detectSheet, type DetectedKind } from "@/lib/auto-detect";
+import { supabase } from "@/lib/supabase";
 
 type Listener = () => void;
 
@@ -30,6 +31,7 @@ export interface ProjectSpecs {
   subgroupSize: number;
   unit: string;
   projectName: string;
+  sampleName: string;
 }
 
 // ===== Per-column specs (override global) =====
@@ -52,15 +54,62 @@ export interface ColumnMapping {
   validated: boolean;
 }
 
-// ===== Import plan (which sheets/fields are merged) =====
-export interface ImportPlan {
-  // sheetKey = `${fileIndex}::${sheetIndex}` → enabled
-  enabledSheets: Record<string, boolean>;
-  // column rename map: original header → canonical name (after compatibility check)
-  columnAliases: Record<string, string>;
-  // explicitly excluded canonical column names
-  excludedColumns: string[];
+export interface MSAProjectSpecs {
+  equipment: string;
+  reference: string;
+  resolutionVal: string;
+  resolutionUnit: string;
+  piece: string;
+  characteristics: string;
+  target: string;
+  toleranceInf: string;
+  toleranceSup: string;
 }
+
+export const DEFAULT_MSA_PROJECT_SPECS: MSAProjectSpecs = {
+  equipment: "", reference: "", resolutionVal: "", resolutionUnit: "mm",
+  piece: "", characteristics: "", target: "", toleranceInf: "", toleranceSup: "",
+};
+
+export type UncertaintyDistribution = "uniform" | "triangular" | "trapezoidal" | "normal";
+
+export interface UncertaintyTypeBRow {
+  id: string;
+  name: string;
+  distribution: UncertaintyDistribution;
+  a: number;
+  k: number;
+  beta: number;
+}
+
+export interface UncertaintyState {
+  measurand: string;
+  unit: string;
+  operator: string;
+  date: string;
+  tolerance: string;
+  meas: string[];
+  bRows: UncertaintyTypeBRow[];
+  tAtelier: string;
+  lPlage: string;
+  kFactor: string;
+}
+
+export const DEFAULT_UNCERTAINTY: UncertaintyState = {
+  measurand: "",
+  unit: "",
+  operator: "",
+  date: "",
+  tolerance: "",
+  meas: Array(10).fill(""),
+  bRows: [
+    { id: "u-default-1", name: "Résolution instrument", distribution: "uniform", a: 0.005, k: 2, beta: 0 },
+    { id: "u-default-2", name: "Étalonnage",            distribution: "normal",  a: 0.010, k: 2, beta: 0 },
+  ],
+  tAtelier: "23",
+  lPlage: "25",
+  kFactor: "2",
+};
 
 export interface AppState {
   files: ParsedFile[];
@@ -68,19 +117,28 @@ export interface AppState {
   activeSheetIndex: number | null;
   specs: ProjectSpecs;
   perColumnSpecs: PerColumnSpecs;
+  fileSpecs: Record<string, ProjectSpecs>;
+  filePerColumnSpecs: Record<string, PerColumnSpecs>;
   mapping: ColumnMapping;
   mergedSheet: ParsedSheet | null;
-  importPlan: ImportPlan;
+  msaProjectSpecs: MSAProjectSpecs;
+  uncertaintyState: UncertaintyState;
 }
 
-const DEFAULT_SPECS: ProjectSpecs = {
-  lsl: 9.5,
-  usl: 10.5,
+export const DEFAULT_SPECS: ProjectSpecs = {
+  lsl: -0.5,  // signed offset below target (absolute LSL = target + lsl)
+  usl: 0.5,   // signed offset above target (absolute USL = target + usl)
   target: 10,
   subgroupSize: 5,
   unit: "mm",
-  projectName: "Projet par défaut",
+  projectName: "Société par défaut",
+  sampleName: "",
 };
+
+/** Compute absolute spec limits from signed offset specs: lslAbs = target + lsl, uslAbs = target + usl */
+export function absLimits(specs: Pick<ProjectSpecs, "lsl" | "usl" | "target">) {
+  return { lsl: specs.target + specs.lsl, usl: specs.target + specs.usl };
+}
 
 const DEFAULT_MAPPING: ColumnMapping = {
   measureCols: [],
@@ -93,13 +151,61 @@ const DEFAULT_MAPPING: ColumnMapping = {
   validated: false,
 };
 
-const DEFAULT_PLAN: ImportPlan = {
-  enabledSheets: {},
-  columnAliases: {},
-  excludedColumns: [],
-};
-
 const STORAGE_KEY = "spc-app-state-v3";
+
+const DB_TABLE = "app_state";
+
+let currentUserId: string | null = null;
+let persistTimer: number | null = null;
+
+function scheduleDbPersist() {
+  if (!currentUserId) return;
+  if (persistTimer !== null) window.clearTimeout(persistTimer);
+  persistTimer = window.setTimeout(() => {
+    persistTimer = null;
+    void persistToDb();
+  }, 800);
+}
+
+async function persistToDb() {
+  if (!currentUserId) return;
+  const s = store.get();
+  const payload = {
+    files: s.files,
+    activeFileIndex: s.activeFileIndex,
+    activeSheetIndex: s.activeSheetIndex,
+    specs: s.specs,
+    mapping: s.mapping,
+    perColumnSpecs: s.perColumnSpecs,
+    fileSpecs: s.fileSpecs,
+    filePerColumnSpecs: s.filePerColumnSpecs,
+  };
+
+  const { error } = await supabase
+    .from(DB_TABLE)
+    .upsert({ user_id: currentUserId, state: payload, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+
+  if (error) {
+    console.error("[app-store] persistToDb error", error);
+  }
+}
+
+async function loadFromDb(userId: string): Promise<Partial<AppState> | null> {
+  const { data, error } = await supabase
+    .from(DB_TABLE)
+    .select("state")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[app-store] loadFromDb error", error);
+    return null;
+  }
+
+  const state = (data as any)?.state as Partial<AppState> | undefined;
+  if (!state) return null;
+  return state;
+}
 
 function loadPersisted(): Partial<AppState> {
   try {
@@ -110,7 +216,12 @@ function loadPersisted(): Partial<AppState> {
       specs: parsed.specs ?? DEFAULT_SPECS,
       mapping: parsed.mapping ?? DEFAULT_MAPPING,
       perColumnSpecs: parsed.perColumnSpecs ?? {},
-      importPlan: parsed.importPlan ?? DEFAULT_PLAN,
+      fileSpecs: parsed.fileSpecs ?? {},
+      filePerColumnSpecs: parsed.filePerColumnSpecs ?? {},
+      msaProjectSpecs: parsed.msaProjectSpecs ?? DEFAULT_MSA_PROJECT_SPECS,
+      uncertaintyState: parsed.uncertaintyState
+        ? { ...DEFAULT_UNCERTAINTY, ...parsed.uncertaintyState }
+        : DEFAULT_UNCERTAINTY,
     };
   } catch {
     return {};
@@ -125,9 +236,12 @@ const store = new SimpleStore<AppState>({
   activeSheetIndex: null,
   specs: { ...DEFAULT_SPECS, ...(persisted.specs || {}) },
   perColumnSpecs: persisted.perColumnSpecs || {},
+  fileSpecs: persisted.fileSpecs || {},
+  filePerColumnSpecs: persisted.filePerColumnSpecs || {},
   mapping: { ...DEFAULT_MAPPING, ...(persisted.mapping || {}) },
   mergedSheet: null,
-  importPlan: { ...DEFAULT_PLAN, ...(persisted.importPlan || {}) },
+  msaProjectSpecs: { ...DEFAULT_MSA_PROJECT_SPECS, ...(persisted.msaProjectSpecs || {}) },
+  uncertaintyState: persisted.uncertaintyState ?? DEFAULT_UNCERTAINTY,
 });
 
 function persist() {
@@ -139,23 +253,31 @@ function persist() {
         specs: s.specs,
         mapping: s.mapping,
         perColumnSpecs: s.perColumnSpecs,
-        importPlan: s.importPlan,
+        fileSpecs: s.fileSpecs,
+        filePerColumnSpecs: s.filePerColumnSpecs,
+        msaProjectSpecs: s.msaProjectSpecs,
+        uncertaintyState: s.uncertaintyState,
       })
     );
   } catch {}
+
+  scheduleDbPersist();
+}
+
+// Sync global specs/perColumnSpecs from a specific file's stored specs
+function syncFromFileSpecs(s: AppState, fileName: string): Partial<AppState> {
+  const updates: Partial<AppState> = {};
+  if (s.fileSpecs[fileName]) {
+    updates.specs = { ...DEFAULT_SPECS, ...s.fileSpecs[fileName] };
+  }
+  if (s.filePerColumnSpecs[fileName]) {
+    updates.perColumnSpecs = s.filePerColumnSpecs[fileName];
+  }
+  return updates;
 }
 
 export function useAppStore<S>(selector: (s: AppState) => S): S {
   return useSyncExternalStore(store.subscribe, () => selector(store.get()), () => selector(store.get()));
-}
-
-// ===== Compatibility analysis between sheets =====
-export interface CompatibilityReport {
-  unionHeaders: string[];
-  commonHeaders: string[];
-  perSheetUnique: { sheetLabel: string; unique: string[] }[];
-  ignored: string[]; // headers excluded
-  renamed: { from: string; to: string }[];
 }
 
 function sheetLabel(fileIdx: number, sheetIdx: number, files: ParsedFile[]) {
@@ -163,75 +285,28 @@ function sheetLabel(fileIdx: number, sheetIdx: number, files: ParsedFile[]) {
   return `${f?.name ?? "?"} / ${f?.sheets[sheetIdx]?.name ?? "?"}`;
 }
 
-export function analyzeCompatibility(files: ParsedFile[], plan: ImportPlan): CompatibilityReport {
-  const selected: { sheet: ParsedSheet; label: string }[] = [];
-  files.forEach((f, fi) =>
-    f.sheets.forEach((s, si) => {
-      const key = `${fi}::${si}`;
-      if (plan.enabledSheets[key] !== false) {
-        selected.push({ sheet: s, label: sheetLabel(fi, si, files) });
-      }
-    })
-  );
-  const allHeaders = new Set<string>();
-  const headerCount = new Map<string, number>();
-  selected.forEach(({ sheet }) => {
-    sheet.headers.forEach((h) => {
-      const canonical = plan.columnAliases[h] ?? h;
-      allHeaders.add(canonical);
-      headerCount.set(canonical, (headerCount.get(canonical) ?? 0) + 1);
-    });
-  });
-  const unionHeaders = Array.from(allHeaders).filter((h) => !plan.excludedColumns.includes(h));
-  const commonHeaders = unionHeaders.filter((h) => (headerCount.get(h) ?? 0) === selected.length);
-  const perSheetUnique = selected.map(({ sheet, label }) => {
-    const cols = sheet.headers.map((h) => plan.columnAliases[h] ?? h);
-    const unique = cols.filter((c) => (headerCount.get(c) ?? 0) === 1);
-    return { sheetLabel: label, unique };
-  });
-  const ignored = plan.excludedColumns.slice();
-  const renamed = Object.entries(plan.columnAliases).map(([from, to]) => ({ from, to }));
-  return { unionHeaders, commonHeaders, perSheetUnique, ignored, renamed };
-}
-
-// ===== Merge utility (respecting import plan) =====
-export function mergeFiles(files: ParsedFile[], plan?: ImportPlan): ParsedSheet | null {
+// ===== Merge utility =====
+export function mergeFiles(files: ParsedFile[]): ParsedSheet | null {
   if (files.length === 0) return null;
-  const aliases = plan?.columnAliases ?? {};
-  const excluded = new Set(plan?.excludedColumns ?? []);
 
   const allSheets: { sheet: ParsedSheet; label: string }[] = [];
   files.forEach((f, fi) =>
     f.sheets.forEach((s, si) => {
-      const key = `${fi}::${si}`;
-      if (!plan || plan.enabledSheets[key] !== false) {
-        allSheets.push({ sheet: s, label: sheetLabel(fi, si, files) });
-      }
+      allSheets.push({ sheet: s, label: sheetLabel(fi, si, files) });
     })
   );
   if (allSheets.length === 0) return null;
-  if (allSheets.length === 1 && Object.keys(aliases).length === 0 && excluded.size === 0) {
-    return allSheets[0].sheet;
-  }
+  if (allSheets.length === 1) return allSheets[0].sheet;
 
   const headerSet = new Set<string>();
-  allSheets.forEach(({ sheet }) =>
-    sheet.headers.forEach((h) => {
-      const canonical = aliases[h] ?? h;
-      if (!excluded.has(canonical)) headerSet.add(canonical);
-    })
-  );
+  allSheets.forEach(({ sheet }) => sheet.headers.forEach((h) => headerSet.add(h)));
   const headers = Array.from(headerSet);
 
   const rows: Record<string, any>[] = [];
   allSheets.forEach(({ sheet, label }) => {
     sheet.rows.forEach((r) => {
       const row: Record<string, any> = { __source: label };
-      headers.forEach((h) => (row[h] = null));
-      sheet.headers.forEach((h) => {
-        const canonical = aliases[h] ?? h;
-        if (!excluded.has(canonical)) row[canonical] = r[h];
-      });
+      headers.forEach((h) => (row[h] = r[h] ?? null));
       rows.push(row);
     });
   });
@@ -242,30 +317,52 @@ export function mergeFiles(files: ParsedFile[], plan?: ImportPlan): ParsedSheet 
 }
 
 export const appActions = {
-  addFile: (f: ParsedFile) => {
-    const files = [...store.get().files, f];
-    const plan = { ...store.get().importPlan };
-    f.sheets.forEach((_, si) => {
-      const key = `${files.length - 1}::${si}`;
-      if (plan.enabledSheets[key] === undefined) plan.enabledSheets[key] = true;
-    });
-    const merged = mergeFiles(files, plan);
+  setCurrentUser: (userId: string | null) => {
+    currentUserId = userId;
+  },
+  loadPersistedForUser: async (userId: string) => {
+    currentUserId = userId;
+    const dbState = await loadFromDb(userId);
+    if (!dbState) return;
 
-    console.groupCollapsed("[appActions.addFile] imported files", files.map((f) => f.name));
-    console.info("[appActions.addFile] currentMapping", store.get().mapping);
-    console.info("[appActions.addFile] enabled sheets", plan.enabledSheets);
+    const files = (dbState.files ?? []) as ParsedFile[];
+    const merged = mergeFiles(files);
+    const activeFileIndex = (dbState.activeFileIndex ?? (files.length ? 0 : null)) as number | null;
+    const activeFileName = activeFileIndex !== null ? files[activeFileIndex]?.name ?? null : null;
+    const fileSpecs = (dbState.fileSpecs ?? store.get().fileSpecs) as Record<string, ProjectSpecs>;
+    const filePerColumnSpecs = (dbState.filePerColumnSpecs ?? store.get().filePerColumnSpecs) as Record<string, PerColumnSpecs>;
+
+    store.set({
+      files,
+      activeFileIndex,
+      activeSheetIndex: (dbState.activeSheetIndex ?? (files.length ? 0 : null)) as number | null,
+      specs: activeFileName && fileSpecs[activeFileName]
+        ? { ...DEFAULT_SPECS, ...fileSpecs[activeFileName] }
+        : ({ ...DEFAULT_SPECS, ...(dbState.specs ?? store.get().specs) } as ProjectSpecs),
+      mapping: (dbState.mapping ?? store.get().mapping) as ColumnMapping,
+      perColumnSpecs: activeFileName && filePerColumnSpecs[activeFileName]
+        ? filePerColumnSpecs[activeFileName]
+        : ((dbState.perColumnSpecs ?? store.get().perColumnSpecs) as PerColumnSpecs),
+      fileSpecs,
+      filePerColumnSpecs,
+      mergedSheet: merged,
+    });
+  },
+  addFile: (f: ParsedFile) => {
+    const s = store.get();
+    const files = [...s.files, f];
+    const merged = mergeFiles(files);
 
     // Auto-detect mapping across ALL sheets of all files.
-    const currentMapping = store.get().mapping;
+    const currentMapping = s.mapping;
     const detections: { fileIdx: number; sheetIdx: number; kind: DetectedKind; map: any; confidence: number }[] = [];
     files.forEach((file, fi) =>
-      file.sheets.forEach((s, si) => {
-        const d = detectSheet(s);
+      file.sheets.forEach((sh, si) => {
+        const d = detectSheet(sh);
         detections.push({ fileIdx: fi, sheetIdx: si, kind: d.kind, map: d.mapping, confidence: d.confidence });
       })
     );
 
-    // Find detections by type with highest confidence
     const getBestDetection = (kind: DetectedKind) => {
       const matches = detections.filter(d => d.kind === kind);
       return matches.sort((a, b) => b.confidence - a.confidence)[0] || null;
@@ -279,14 +376,11 @@ export const appActions = {
     const spcDet = getBestDetection("spc");
     const msaDet = getBestDetection("msa");
 
-    // Validate that previously-mapped columns still exist in the new dataset.
     const allHeaders = new Set<string>();
-    files.forEach((file) => file.sheets.forEach((s) => s.headers.forEach((h) => allHeaders.add(h))));
+    files.forEach((file) => file.sheets.forEach((sh) => sh.headers.forEach((h) => allHeaders.add(h))));
     const stillValid = (col: string | null | undefined) => !!col && allHeaders.has(col);
     const measuresStillValid =
       currentMapping.measureCols.length > 0 && currentMapping.measureCols.every((c) => allHeaders.has(c));
-    const measureColsDiffer = (a: string[], b: string[]) =>
-      a.length !== b.length || a.some((value, index) => value !== b[index]);
 
     const detectedMeasures = spcDet?.map.measureCols ?? msaDet?.map.measureCols ?? msaRRDet?.map.measureCols ?? [];
     const detectedPart = msaDet?.map.partCol ?? msaRRDet?.map.partCol ?? null;
@@ -302,28 +396,14 @@ export const appActions = {
 
     const nextMapping: ColumnMapping = {
       ...currentMapping,
-      // Re-detect if previous mapping is invalid against new dataset,
-      // or if a more specific SPC detection is available.
       measureCols: nextMeasureCols,
       partCol: stillValid(currentMapping.partCol) ? currentMapping.partCol : detectedPart,
       operatorCol: stillValid(currentMapping.operatorCol) ? currentMapping.operatorCol : detectedOperator,
       trialCol: stillValid(currentMapping.trialCol) ? currentMapping.trialCol : detectedTrial,
       valueCol: stillValid(currentMapping.valueCol) ? currentMapping.valueCol : detectedValue,
-      validated: true, // auto-detected mapping is considered valid until user changes it
+      validated: true,
     };
 
-    console.info("[appActions.addFile] detections", detections);
-    console.info("[appActions.addFile] detected types", {
-      dashboard: dashboardDet,
-      spcCard: spcCardDet,
-      msaRR: msaRRDet,
-      capability: capabilityDet,
-      uncertainty: uncertaintyDet,
-      spc: spcDet,
-      msa: msaDet,
-    });
-
-    // Expose the detection summary so callers (UI) can display feedback.
     (appActions as any)._lastDetection = {
       dashboard: dashboardDet ? { fileIdx: dashboardDet.fileIdx, sheetIdx: dashboardDet.sheetIdx } : null,
       spcCard: spcCardDet ? { fileIdx: spcCardDet.fileIdx, sheetIdx: spcCardDet.sheetIdx } : null,
@@ -335,37 +415,61 @@ export const appActions = {
       unknown: detections.every((d) => d.kind === "unknown"),
     };
 
-    // Pick a sensible active sheet (prefer most specific types first)
     const preferredOrder = [msaRRDet, spcCardDet, dashboardDet, capabilityDet, uncertaintyDet, spcDet, msaDet];
     const preferred = preferredOrder.find(d => d !== null) ?? { fileIdx: files.length - 1, sheetIdx: 0 };
 
-    console.info("[appActions.addFile] preferred sheet", preferred);
-    console.info("[appActions.addFile] nextMapping", nextMapping);
-    console.groupEnd();
+    const newActiveFileName = files[preferred.fileIdx]?.name ?? null;
+    const specsSync = newActiveFileName && s.fileSpecs[newActiveFileName]
+      ? { specs: { ...DEFAULT_SPECS, ...s.fileSpecs[newActiveFileName] } }
+      : {};
+    const perColSync = newActiveFileName && s.filePerColumnSpecs[newActiveFileName]
+      ? { perColumnSpecs: s.filePerColumnSpecs[newActiveFileName] }
+      : {};
 
     store.set({
       files,
       activeFileIndex: preferred.fileIdx,
       activeSheetIndex: preferred.sheetIdx,
       mergedSheet: merged,
-      importPlan: plan,
       mapping: nextMapping,
+      ...specsSync,
+      ...perColSync,
     });
     persist();
   },
   removeFile: (idx: number) => {
-    const files = store.get().files.filter((_, i) => i !== idx);
-    const plan = store.get().importPlan;
-    const merged = mergeFiles(files, plan);
+    const s = store.get();
+    const files = s.files.filter((_, i) => i !== idx);
+    const merged = mergeFiles(files);
+    const newActiveFileName = files.length ? files[0]?.name ?? null : null;
     store.set({
       files,
       activeFileIndex: files.length ? 0 : null,
       activeSheetIndex: files.length ? 0 : null,
       mergedSheet: merged,
+      ...(newActiveFileName && s.fileSpecs[newActiveFileName]
+        ? { specs: { ...DEFAULT_SPECS, ...s.fileSpecs[newActiveFileName] } }
+        : {}),
+      ...(newActiveFileName && s.filePerColumnSpecs[newActiveFileName]
+        ? { perColumnSpecs: s.filePerColumnSpecs[newActiveFileName] }
+        : {}),
     });
+    persist();
   },
-  setActiveFile: (idx: number) => store.set({ activeFileIndex: idx, activeSheetIndex: 0 }),
-  setActiveSheet: (idx: number) => store.set({ activeSheetIndex: idx }),
+  setActiveFile: (idx: number) => {
+    const s = store.get();
+    const fileName = s.files[idx]?.name ?? null;
+    store.set({
+      activeFileIndex: idx,
+      activeSheetIndex: 0,
+      ...(fileName ? syncFromFileSpecs(s, fileName) : {}),
+    });
+    persist();
+  },
+  setActiveSheet: (idx: number) => {
+    store.set({ activeSheetIndex: idx });
+    persist();
+  },
   getActiveSheet: (): ParsedSheet | null => {
     const s = store.get();
     if (s.activeFileIndex === null || s.activeSheetIndex === null) return null;
@@ -376,16 +480,18 @@ export const appActions = {
     if (s.files.length > 1 && s.mergedSheet) return s.mergedSheet;
     return appActions.getActiveSheet();
   },
-  // Find the sheet that best matches a given analysis kind (auto-detected).
   getSheetForKind: (kind: "spc" | "msa"): ParsedSheet | null => {
     const s = store.get();
-    console.info("[getSheetForKind] kind", kind, "fileCount", s.files.length);
     let fallbackSheet: ParsedSheet | null = null;
     for (const f of s.files) {
       for (const sh of f.sheets) {
         const detected = detectSheet(sh).kind;
-        console.info("[getSheetForKind] sheet", sh.name, "detected", detected);
-        if (detected === kind || (kind === "msa" && detected === "msa-rr")) return sh;
+        if (
+          detected === kind ||
+          (kind === "msa" && detected === "msa-rr") ||
+          (kind === "spc" && detected === "spc-card")
+        )
+          return sh;
         if (kind === "msa" && !fallbackSheet && s.mapping.partCol && s.mapping.operatorCol) {
           const hasPart = sh.headers.includes(s.mapping.partCol);
           const hasOperator = sh.headers.includes(s.mapping.operatorCol);
@@ -396,18 +502,80 @@ export const appActions = {
         }
       }
     }
-    if (fallbackSheet) {
-      console.info("[getSheetForKind] fallback to mapped MSA sheet", fallbackSheet.name);
-      return fallbackSheet;
-    }
-    console.info("[getSheetForKind] no sheet found for kind", kind);
+    if (fallbackSheet) return fallbackSheet;
     return null;
   },
+  clearFiles: () => {
+    store.set({
+      files: [],
+      activeFileIndex: null,
+      activeSheetIndex: null,
+      mergedSheet: null,
+      mapping: { ...DEFAULT_MAPPING },
+    });
+    persist();
+  },
   hasAnyData: (): boolean => store.get().files.length > 0,
+
+  // ===== Global specs (backward compat / no-file fallback) =====
   setSpecs: (patch: Partial<ProjectSpecs>) => {
     store.set({ specs: { ...store.get().specs, ...patch } });
     persist();
   },
+
+  setMsaProjectSpecs: (patch: Partial<MSAProjectSpecs>) => {
+    store.set({ msaProjectSpecs: { ...store.get().msaProjectSpecs, ...patch } });
+    persist();
+  },
+
+  setUncertaintyState: (patch: Partial<UncertaintyState>) => {
+    store.set({ uncertaintyState: { ...store.get().uncertaintyState, ...patch } });
+    persist();
+  },
+
+  // ===== Per-file specs =====
+  setFileSpecs: (fileName: string, patch: Partial<ProjectSpecs>) => {
+    const s = store.get();
+    const current = s.fileSpecs[fileName] ?? { ...DEFAULT_SPECS, ...s.specs };
+    const updated = { ...current, ...patch };
+    const newFileSpecs = { ...s.fileSpecs, [fileName]: updated };
+    const activeFileName = s.activeFileIndex !== null ? s.files[s.activeFileIndex]?.name ?? null : null;
+    store.set({
+      fileSpecs: newFileSpecs,
+      ...(fileName === activeFileName ? { specs: updated } : {}),
+    });
+    persist();
+  },
+  setFileColumnSpec: (fileName: string, col: string, patch: Partial<ColumnSpec>) => {
+    const s = store.get();
+    const currentPerCol = s.filePerColumnSpecs[fileName] ?? {};
+    const fileSpec = s.fileSpecs[fileName] ?? s.specs;
+    const current = currentPerCol[col] ?? { lsl: fileSpec.lsl, usl: fileSpec.usl, target: fileSpec.target };
+    const updated = { ...current, ...patch };
+    const newFilePerColSpecs = { ...s.filePerColumnSpecs, [fileName]: { ...currentPerCol, [col]: updated } };
+    const activeFileName = s.activeFileIndex !== null ? s.files[s.activeFileIndex]?.name ?? null : null;
+    store.set({
+      filePerColumnSpecs: newFilePerColSpecs,
+      ...(fileName === activeFileName ? { perColumnSpecs: { ...s.perColumnSpecs, [col]: updated } } : {}),
+    });
+    persist();
+  },
+  removeFileColumnSpec: (fileName: string, col: string) => {
+    const s = store.get();
+    const currentPerCol = { ...(s.filePerColumnSpecs[fileName] ?? {}) };
+    delete currentPerCol[col];
+    const newFilePerColSpecs = { ...s.filePerColumnSpecs, [fileName]: currentPerCol };
+    const activeFileName = s.activeFileIndex !== null ? s.files[s.activeFileIndex]?.name ?? null : null;
+    const nextGlobalPerCol = { ...s.perColumnSpecs };
+    delete nextGlobalPerCol[col];
+    store.set({
+      filePerColumnSpecs: newFilePerColSpecs,
+      ...(fileName === activeFileName ? { perColumnSpecs: nextGlobalPerCol } : {}),
+    });
+    persist();
+  },
+
+  // ===== Legacy per-column specs (global / no-file fallback) =====
   setColumnSpec: (col: string, patch: Partial<ColumnSpec>) => {
     const s = store.get();
     const current = s.perColumnSpecs[col] ?? { lsl: s.specs.lsl, usl: s.specs.usl, target: s.specs.target };
@@ -434,38 +602,9 @@ export const appActions = {
     store.set({ mapping: { ...DEFAULT_MAPPING } });
     persist();
   },
-  // ===== Import plan =====
-  setSheetEnabled: (fileIdx: number, sheetIdx: number, enabled: boolean) => {
-    const plan = { ...store.get().importPlan };
-    plan.enabledSheets = { ...plan.enabledSheets, [`${fileIdx}::${sheetIdx}`]: enabled };
-    const merged = mergeFiles(store.get().files, plan);
-    store.set({ importPlan: plan, mergedSheet: merged });
-    persist();
-  },
-  setColumnAlias: (from: string, to: string) => {
-    const plan = { ...store.get().importPlan };
-    if (!to || to === from) {
-      const next = { ...plan.columnAliases };
-      delete next[from];
-      plan.columnAliases = next;
-    } else {
-      plan.columnAliases = { ...plan.columnAliases, [from]: to };
-    }
-    const merged = mergeFiles(store.get().files, plan);
-    store.set({ importPlan: plan, mergedSheet: merged });
-    persist();
-  },
-  toggleExcludedColumn: (col: string) => {
-    const plan = { ...store.get().importPlan };
-    plan.excludedColumns = plan.excludedColumns.includes(col)
-      ? plan.excludedColumns.filter((c) => c !== col)
-      : [...plan.excludedColumns, col];
-    const merged = mergeFiles(store.get().files, plan);
-    store.set({ importPlan: plan, mergedSheet: merged });
-    persist();
-  },
   rebuildMerge: () => {
-    const merged = mergeFiles(store.get().files, store.get().importPlan);
+    const merged = mergeFiles(store.get().files);
     store.set({ mergedSheet: merged });
+    persist();
   },
 };

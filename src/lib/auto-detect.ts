@@ -59,18 +59,11 @@ function hasDashboardIndicators(headerStr: string, headers: string[], sheet: Par
 }
 
 function hasSPCChartIndicators(headerStr: string, headers: string[], sheet: ParsedSheet): boolean {
-  const spcKeywords = [
-    'ucl', 'lcl', 'cl', 'control limit',
-    'moyenne', 'mean', 'average',
-    'range', 'etendue',
-    'subgroup', 'sous-groupe', 'lot',
-    'point', 'sample', 'échantillon'
-  ];
-
-  const hasControlLimits = ['ucl', 'lcl'].some(kw => headerStr.includes(kw));
-  const hasSPCTerms = spcKeywords.some(kw => headerStr.includes(kw));
-
-  return hasControlLimits || (hasSPCTerms && headers.length >= 3);
+  // spc-card = pre-computed control chart WITH UCL/LCL columns.
+  // Raw measurement data (Mesure1..Mn, M1..Mn) should fall through to spc detection.
+  const hasUCL = headerStr.includes('ucl');
+  const hasLCL = headerStr.includes('lcl');
+  return hasUCL && hasLCL;
 }
 
 function detectMSA_RR(headers: string[], sheet: ParsedSheet): DetectionResult | null {
@@ -186,41 +179,38 @@ export function detectSheet(sheet: ParsedSheet): DetectionResult {
 
   // 1. Dashboard detection: Look for KPI/summary metrics
   if (hasDashboardIndicators(headerStr, headers, sheet)) {
-    const result = {
+    const result: DetectionResult = {
       kind: "dashboard",
       mapping: {},
       suggestedSubgroupSize: null,
       reason: "Tableau de bord détecté (métriques et KPIs).",
       confidence: 0.9
     };
-    console.info("[detectSheet] result", debugInfo, result);
     return result;
   }
 
   // 2. SPC Card detection: Control chart data with UCL/LCL/Mean/etc.
   if (hasSPCChartIndicators(headerStr, headers, sheet)) {
-    const result = {
+    const result: DetectionResult = {
       kind: "spc-card",
       mapping: {},
       suggestedSubgroupSize: null,
       reason: "Carte de contrôle SPC détectée (UCL/LCL/Moyenne).",
       confidence: 0.95
     };
-    console.info("[detectSheet] result", debugInfo, result);
     return result;
   }
 
   // 3. MSA R&R detection: Gage R&R study format
   const msaRRResult = detectMSA_RR(headers, sheet);
   if (msaRRResult) {
-    console.info("[detectSheet] result", debugInfo, msaRRResult);
     return msaRRResult;
   }
 
   // 4. Uncertainty detection: Measurement uncertainty data
   if (hasUncertaintyIndicators(headerStr, headers, sheet)) {
     return {
-      kind: "uncertainty",
+      kind: "uncertainty" as DetectedKind,
       mapping: {},
       suggestedSubgroupSize: null,
       reason: "Données d'incertitude détectées.",
@@ -231,7 +221,7 @@ export function detectSheet(sheet: ParsedSheet): DetectionResult {
   // 5. Capability detection: Process capability data
   if (hasCapabilityIndicators(headerStr, headers, sheet)) {
     return {
-      kind: "capability",
+      kind: "capability" as DetectedKind,
       mapping: {},
       suggestedSubgroupSize: null,
       reason: "Données de capabilité détectées.",
@@ -258,7 +248,7 @@ export function detectSheet(sheet: ParsedSheet): DetectionResult {
     const finalValueCol =
       valueCol ?? headers.find((h) => h !== partCol && h !== operatorCol && h !== trialCol && isNumericColumn(sheet, h)) ?? null;
     if (finalValueCol) {
-      const result = {
+      const result: DetectionResult = {
         kind: "msa",
         mapping: {
           partCol,
@@ -271,7 +261,6 @@ export function detectSheet(sheet: ParsedSheet): DetectionResult {
         reason: `Format MSA détecté (Pièce/Opérateur/Mesure).`,
         confidence: 0.9
       };
-      console.info("[detectSheet] result", debugInfo, result);
       return result;
     }
   }
@@ -285,7 +274,7 @@ export function detectSheet(sheet: ParsedSheet): DetectionResult {
   });
 
   if (measureCols.length >= 2) {
-    const result = {
+    const result: DetectionResult = {
       kind: "spc",
       mapping: {
         measureCols,
@@ -298,12 +287,11 @@ export function detectSheet(sheet: ParsedSheet): DetectionResult {
       reason: `Format SPC/Capabilité détecté (${measureCols.length} colonnes de mesures par sous-groupe).`,
       confidence: 0.85
     };
-    console.info("[detectSheet] result", debugInfo, result);
     return result;
   }
 
   if (measureCols.length === 1) {
-    const result = {
+    const result: DetectionResult = {
       kind: "spc",
       mapping: {
         measureCols,
@@ -316,18 +304,16 @@ export function detectSheet(sheet: ParsedSheet): DetectionResult {
       reason: `Une seule colonne numérique détectée — sera scindée en sous-groupes.`,
       confidence: 0.7
     };
-    console.info("[detectSheet] result", debugInfo, result);
     return result;
   }
 
-  const unknownResult = {
+  const unknownResult: DetectionResult = {
     kind: "unknown",
     mapping: {},
     suggestedSubgroupSize: null,
     reason: "Structure non reconnue — utilisez l'assistant de mappage.",
     confidence: 0
   };
-  console.info("[detectSheet] result", debugInfo, unknownResult);
   return unknownResult;
 }
 

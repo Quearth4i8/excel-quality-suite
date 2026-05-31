@@ -24,7 +24,7 @@ export const EmptyState = ({
         asChild
         size="sm"
         className="gap-2"
-        onClick={() => console.info("[EmptyState] import button clicked", { route: "/data" })}
+        onClick={() => {}}
       >
         <Link to="/data">
           <Upload className="w-4 h-4" />

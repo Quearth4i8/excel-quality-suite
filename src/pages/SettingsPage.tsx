@@ -11,9 +11,9 @@ const SettingsPage = () => (
       <SectionCard title="Application">
         <ul className="space-y-3 text-sm">
           <li className="flex justify-between py-2 border-b border-border/50"><span className="text-muted-foreground">Version</span><span className="font-semibold">1.1.0</span></li>
-          <li className="flex justify-between py-2 border-b border-border/50"><span className="text-muted-foreground">Mode</span><span className="font-semibold">Local (sans serveur)</span></li>
+          <li className="flex justify-between py-2 border-b border-border/50"><span className="text-muted-foreground">Backend</span><span className="font-semibold">Supabase (PostgreSQL)</span></li>
           <li className="flex justify-between py-2 border-b border-border/50"><span className="text-muted-foreground">Source de données</span><span className="font-semibold">Fichiers Excel (multi-import)</span></li>
-          <li className="flex justify-between py-2"><span className="text-muted-foreground">Stockage</span><span className="font-semibold">Mémoire navigateur + localStorage</span></li>
+          <li className="flex justify-between py-2"><span className="text-muted-foreground">Stockage</span><span className="font-semibold">Supabase DB + localStorage (fallback)</span></li>
         </ul>
       </SectionCard>
       <SectionCard title="Conventions">
