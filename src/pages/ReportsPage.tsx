@@ -349,8 +349,8 @@ const ReportsPage = () => {
                 ["Ppk", cap.ppk.toFixed(3), cap.ppk >= 1.33 ? "Capable" : cap.ppk >= 1 ? "À améliorer" : "Non capable"],
                 ["Cpm", cap.cpm?.toFixed(3) ?? "-", "-"],
                 ["Moyenne", cap.mean.toFixed(4), "-"],
-                ["σ court terme", cap.stdShortTerm.toFixed(4), "-"],
-                ["σ long terme", cap.stdLongTerm.toFixed(4), "-"],
+                ["Sigma court terme", cap.stdShortTerm.toFixed(4), "-"],
+                ["Sigma long terme", cap.stdLongTerm.toFixed(4), "-"],
               ],
               theme: "striped",
               headStyles: { fillColor: [37, 99, 235] },
@@ -363,7 +363,7 @@ const ReportsPage = () => {
               startSection("2.1 Capabilité par colonne de mesure", 2);
               autoTable(doc, {
                 startY: 24,
-                head: [["Colonne", "LSL", "Cible", "USL", "Moyenne", "σ", "Cp", "Cpk", "Ppk", "Statut"]],
+                head: [["Colonne", "LSL", "Cible", "USL", "Moyenne", "Sigma", "Cp", "Cpk", "Ppk", "Statut"]],
                 body: perColumnCap
                   .filter((p) => p.cap)
                   .map((p) => [
