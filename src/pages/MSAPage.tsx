@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { AIPanel } from "@/components/ai/AIPanel";
 import { SectionCard } from "@/components/dashboard/SectionCard";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { useAppStore } from "@/store/app-store";
@@ -268,6 +269,25 @@ const MSAPage = () => {
             </div>
           </div>
         </SectionCard>
+      </div>
+
+      <div className="mt-5">
+        <AIPanel
+          title="Interprétation IA — MSA R&R"
+          systemPrompt="Tu es un expert en analyse des systèmes de mesure (MSA/Gage R&R selon la méthode AIAG). Analyse les résultats MSA fournis et donne une interprétation claire en français. Explique le %GRR, la répétabilité, la reproductibilité, le ndc, identifie les problèmes et propose des actions correctives concrètes. Sois direct et pratique."
+          userMessage={`Voici les résultats MSA R&R :
+- %GRR (% Study Var) : ${msa.grrPct.toFixed(2)}%
+- Répétabilité EV : ${msa.ev.toFixed(4)} (${msa.evPct.toFixed(1)}% study, ${msa.evContrib.toFixed(1)}% contribution)
+- Reproductibilité AV : ${msa.av.toFixed(4)} (${msa.avPct.toFixed(1)}% study, ${msa.avContrib.toFixed(1)}% contribution)
+- R&R GRR : ${msa.grr.toFixed(4)} (${msa.grrPct.toFixed(1)}% study, ${msa.grrContrib.toFixed(1)}% contribution)
+- Variation pièce à pièce PV : ${msa.pv.toFixed(4)} (${msa.pvPct.toFixed(1)}% study, ${msa.pvContrib.toFixed(1)}% contribution)
+- Variation totale TV : ${msa.tv.toFixed(4)}
+- Nombre de catégories distinctes (ndc) : ${msa.ndc}
+- Pièces : ${msa.parts} | Opérateurs : ${msa.operators} | Essais : ${msa.trials}
+- Statut : ${msa.interpretation}
+
+Donne une interprétation complète et des recommandations pour améliorer le système de mesure.`}
+        />
       </div>
 
     </AppLayout>

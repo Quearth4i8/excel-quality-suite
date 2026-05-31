@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { AIPanel } from "@/components/ai/AIPanel";
 import { SectionCard } from "@/components/dashboard/SectionCard";
 import { ControlChart } from "@/components/charts/ControlChart";
 import { EmptyState } from "@/components/dashboard/EmptyState";
@@ -326,6 +327,24 @@ const SPCPage = () => {
               <ControlChart values={zoomData.values} referenceLines={xbarRefLines} outOfControl={zoomData.outOfControl} height={280} />
             </SectionCard>
           )}
+
+          <AIPanel
+            title="Interprétation IA — Cartes SPC"
+            systemPrompt="Tu es un expert en contrôle statistique des procédés (SPC). Analyse les résultats SPC fournis et donne une interprétation claire et concise en français. Identifie les points critiques, explique ce qu'ils signifient pour le procédé, et propose des actions correctives si nécessaire. Sois direct et pratique."
+            userMessage={`Voici les résultats SPC :
+- Sous-groupes analysés : ${xbarR.subgroupMeans.length}
+- Taille du sous-groupe (n) : ${xbarR.n}
+- Moyenne des moyennes (X̄̄) : ${xbarR.xbar.toFixed(4)}
+- Moyenne des étendues (R̄) : ${xbarR.rbar.toFixed(4)}
+- UCL X̄ : ${xbarR.uclX.toFixed(4)} | LCL X̄ : ${xbarR.lclX.toFixed(4)}
+- UCL R : ${xbarR.uclR.toFixed(4)} | LCL R : ${xbarR.lclR.toFixed(4)}
+- Sigma estimé (σ̂) : ${xbarR.sigmaHat.toFixed(4)}
+- Points hors contrôle : ${xbarR.outOfControl.length}
+- Règles Western Electric déclenchées : ${xbarR.westernElectric.length}
+${xbarR.westernElectric.length > 0 ? `- Détail règles WE : ${xbarR.westernElectric.map(w => `Règle ${w.rule} au point #${w.index + 1}`).join(", ")}` : ""}
+
+Donne une interprétation complète de l'état du procédé.`}
+          />
         </>
       )}
     </AppLayout>

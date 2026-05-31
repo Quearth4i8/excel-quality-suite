@@ -37,16 +37,11 @@ export const AppSidebar = ({ open, onOpenChange }: { open: boolean; onOpenChange
       }`}
     >
       {/* Brand */}
-      <div className={`flex items-center border-b border-sidebar-border ${open ? "gap-3 px-4 py-4" : "justify-center px-2 py-4"}`}>
-        <img
-          src="/logo.png"
-          alt="CrimpControl"
-          className="shrink-0 object-contain drop-shadow-lg"
-          style={{ width: open ? 52 : 44, height: open ? 52 : 44, transition: "width 0.3s, height 0.3s" }}
-        />
+      <div className={`flex items-center border-b border-sidebar-border ${open ? "gap-3 px-5 py-5" : "justify-center px-3 py-5"}`}>
+        <img src="/logo.png" alt="CrimpControl" className="shrink-0 object-contain" style={{ width: 40, height: 40, transform: "scale(1.8)" }} />
         {open && (
           <div className="overflow-hidden">
-            <div className="text-base font-bold text-sidebar-accent-foreground tracking-tight whitespace-nowrap">CrimpControl</div>
+            <div className="font-semibold text-sidebar-accent-foreground tracking-tight whitespace-nowrap">CrimpControl</div>
           </div>
         )}
       </div>

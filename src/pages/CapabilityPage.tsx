@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { AIPanel } from "@/components/ai/AIPanel";
 import { SectionCard } from "@/components/dashboard/SectionCard";
 import { EmptyState } from "@/components/dashboard/EmptyState";
 import { useAppStore, appActions, absLimits } from "@/store/app-store";
@@ -170,6 +171,26 @@ const CapabilityPage = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <HistChart data={hist} title="Histogramme de distribution" showCurve={false} {...chartProps} />
         <HistChart data={hist} title="Courbe de distribution normale" showCurve={true} {...chartProps} />
+      </div>
+
+      <div className="mt-5">
+        <AIPanel
+          title="Interprétation IA — Capabilité"
+          systemPrompt="Tu es un expert en capabilité des procédés industriels. Analyse les indices de capabilité fournis et donne une interprétation claire en français. Explique ce que signifient les valeurs Cp, Cpk, Pp, Ppk pour ce procédé, identifie les risques, et propose des recommandations concrètes pour améliorer la capabilité si nécessaire. Sois direct et actionnable."
+          userMessage={`Voici les résultats de capabilité :
+- Cp : ${cap.cp.toFixed(4)}
+- Cpk : ${cap.cpk.toFixed(4)}
+- Pp : ${cap.pp.toFixed(4)}
+- Ppk : ${cap.ppk.toFixed(4)}
+${cap.cpm !== undefined ? `- Cpm : ${cap.cpm.toFixed(4)}` : ""}
+- Moyenne (X̄) : ${cap.mean.toFixed(4)}
+- Sigma court terme (σᵢ) : ${cap.stdShortTerm.toFixed(4)}
+- Sigma long terme (σg) : ${cap.stdLongTerm.toFixed(4)}
+- LSL : ${cap.lsl} | USL : ${cap.usl}${cap.target !== undefined ? ` | Cible : ${cap.target}` : ""}
+- Statut : ${cap.interpretation}
+
+Donne une interprétation détaillée et des recommandations.`}
+        />
       </div>
     </AppLayout>
   );
