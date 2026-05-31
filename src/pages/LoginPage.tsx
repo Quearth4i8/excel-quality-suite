@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/auth/AuthContext";
-import { ArrowLeft, BarChart3, Eye, EyeOff, Shield, TrendingUp } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Shield, TrendingUp } from "lucide-react";
 
 const orbStyles = [
   { top: "10%", left: "15%", size: 500, color: "hsl(217, 91%, 60%)", delay: 0, duration: 20 },
@@ -18,7 +18,7 @@ const orbStyles = [
 ];
 
 const features = [
-  { icon: BarChart3, label: "SPC & Maîtrise statistique" },
+  { icon: Shield, label: "SPC & Maîtrise statistique" },
   { icon: Shield, label: "MSA & Fidélité des mesures" },
   { icon: TrendingUp, label: "Capabilité & Incertitude" },
 ];
@@ -113,8 +113,8 @@ const LoginPage = () => {
           {/* Left side — branding */}
           <div className="login-fade-left flex-1 text-center lg:text-left">
             <div className="inline-flex items-center gap-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/10 px-4 py-1.5 text-sm text-white/80 mb-6">
-              <BarChart3 className="h-4 w-4" />
-              Excel Quality Suite
+              <img src="/logo.png" alt="CrimpControl" className="h-4 w-4 object-contain" />
+              CrimpControl
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white tracking-tight leading-tight mb-4">
               Qualité

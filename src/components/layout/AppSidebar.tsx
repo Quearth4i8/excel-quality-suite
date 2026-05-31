@@ -7,7 +7,6 @@ import {
   Users,
   Ruler,
   FileText,
-  Activity,
   Shield,
 } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
@@ -38,14 +37,16 @@ export const AppSidebar = ({ open, onOpenChange }: { open: boolean; onOpenChange
       }`}
     >
       {/* Brand */}
-      <div className={`flex items-center border-b border-sidebar-border ${open ? "gap-3 px-5 py-5" : "justify-center px-3 py-5"}`}>
-        <div className="w-10 h-10 rounded-lg gradient-primary flex items-center justify-center shadow-elegant shrink-0">
-          <Activity className="w-5 h-5 text-primary-foreground" />
-        </div>
+      <div className={`flex items-center border-b border-sidebar-border ${open ? "gap-3 px-4 py-4" : "justify-center px-2 py-4"}`}>
+        <img
+          src="/logo.png"
+          alt="CrimpControl"
+          className="shrink-0 object-contain drop-shadow-lg"
+          style={{ width: open ? 52 : 44, height: open ? 52 : 44, transition: "width 0.3s, height 0.3s" }}
+        />
         {open && (
           <div className="overflow-hidden">
-            <div className="font-semibold text-sidebar-accent-foreground tracking-tight whitespace-nowrap">SPC CONTROL</div>
-            <div className="text-xs text-sidebar-foreground/70 whitespace-nowrap">Analyse de processus</div>
+            <div className="text-base font-bold text-sidebar-accent-foreground tracking-tight whitespace-nowrap">CrimpControl</div>
           </div>
         )}
       </div>
@@ -125,7 +126,7 @@ export const AppSidebar = ({ open, onOpenChange }: { open: boolean; onOpenChange
             open ? "opacity-100" : "opacity-0"
           }`}
         >
-          © 2026 SPC Control · v1.0.0
+          © 2026 CrimpControl · v1.0.0
         </div>
       </div>
     </aside>

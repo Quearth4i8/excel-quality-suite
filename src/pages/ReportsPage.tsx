@@ -22,7 +22,6 @@ import {
   buildRRefLines,
 } from "@/lib/spc-engine";
 import { DEMO_SUBGROUPS, DEMO_MSA } from "@/lib/demo-data";
-import { downloadXLSX } from "@/lib/excel";
 import { notificationActions } from "@/lib/notifications";
 import { ControlChart } from "@/components/charts/ControlChart";
 import {
@@ -38,7 +37,7 @@ import {
   Cell,
   Legend,
 } from "recharts";
-import { FileText, FileSpreadsheet, Loader2, BarChart2, Gauge } from "lucide-react";
+import { FileText, Loader2, BarChart2, Gauge } from "lucide-react";
 import { toast } from "sonner";
 
 type ReportType = "spc" | "msa";
@@ -68,7 +67,7 @@ const ReportsPage = () => {
     documentNumber: false,
   });
 
-  const [busy, setBusy] = useState<"pdf" | "xlsx" | null>(null);
+  const [busy, setBusy] = useState<"pdf" | null>(null);
   const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10));
   const [reportAuthor, setReportAuthor] = useState("");
   const [documentNumber, setDocumentNumber] = useState("");
@@ -612,149 +611,6 @@ const ReportsPage = () => {
     }
   };
 
-  // ===== Excel Export =====
-  const exportXlsx = async () => {
-    setBusy("xlsx");
-    try {
-      const sheets: { name: string; rows: any[][] }[] = [];
-      const sel = reportType === "spc" ? spcSelected : msaSelected;
-      const docNum = (sel as any).documentNumber && documentNumber ? documentNumber : null;
-
-      if (reportType === "spc") {
-        const s = spcSelected;
-        sheets.push({
-          name: "Synthèse",
-          rows: [
-            ["Rapport SPC & Capabilité"],
-            ["Société", specs.projectName],
-            ["Échantillon", specs.sampleName || "—"],
-            ["Date du rapport", reportDate],
-            ["Préparé par", reportAuthor || "—"],
-            ...(docNum ? [["N° document", docNum]] : []),
-            ["Unité", specs.unit],
-            ["LSI", absLimits(specs).lsl],
-            ["LSS", absLimits(specs).usl],
-            ["Cible", specs.target],
-            ["Taille sous-groupe", specs.subgroupSize],
-          ],
-        });
-        if (s.spc) {
-          sheets.push({
-            name: "SPC - Données",
-            rows: [
-              ["Sous-groupe", ...Array.from({ length: spc.n }, (_, i) => `Mesure ${i + 1}`), "Moyenne", "Étendue"],
-              ...subgroups.map((g, i) => [i + 1, ...g, spc.subgroupMeans[i], spc.subgroupRanges[i]]),
-            ],
-          });
-          sheets.push({
-            name: "SPC - Limites",
-            rows: [
-              ["Paramètre", "Valeur"],
-              ["X̿ (moy. des moy.)", spc.xbar],
-              ["R̄ (moy. étendues)", spc.rbar],
-              ["UCL X̄", spc.uclX],
-              ["CL X̄", spc.clX],
-              ["LCL X̄", spc.lclX],
-              ["UCL R", spc.uclR],
-              ["CL R", spc.clR],
-              ["LCL R", spc.lclR],
-              ["Sigma estimé", spc.sigmaHat],
-              ["Points hors contrôle", spc.outOfControl.length],
-              [],
-              ["Règles Western Electric"],
-              ["Règle", "Sous-groupe", "Description"],
-              ...spc.westernElectric.map((r) => [r.rule, r.index + 1, r.description]),
-            ],
-          });
-        }
-        if (s.capability) {
-          sheets.push({
-            name: "Capabilité",
-            rows: [
-              ["Indice", "Valeur"],
-              ["Cp", cap.cp], ["Cpk", cap.cpk], ["Pp", cap.pp], ["Ppk", cap.ppk],
-              ["Cpm", cap.cpm ?? ""], ["Moyenne", cap.mean],
-              ["Sigma court terme", cap.stdShortTerm], ["Sigma long terme", cap.stdLongTerm],
-              ["LSL", cap.lsl], ["USL", cap.usl], ["Target", cap.target ?? ""],
-              ["Statut", cap.interpretation],
-              [], ["Histogramme"], ["Bin centre", "Effectif", "Densité normale"],
-              ...hist.map((h) => [h.bin, h.count, h.pdf]),
-            ],
-          });
-        }
-        if (s.uncertainty) {
-          sheets.push({
-            name: "Incertitude",
-            rows: [
-              ["Composante", "Valeur"],
-              ["N", typeA.n], ["Moyenne", typeA.mean], ["s", typeA.s],
-              ["uA", uncertainty.uA], ["uB", uncertainty.uB], ["uC", uncertainty.uC],
-              ["k", uncertainty.k], ["U (élargie)", uncertainty.U],
-              ["Résultat", `${typeA.mean.toFixed(4)} ± ${uncertainty.U.toFixed(5)} ${specs.unit}`],
-            ],
-          });
-        }
-      } else {
-        const s = msaSelected;
-        sheets.push({
-          name: "Synthèse",
-          rows: [
-            ["Rapport MSA — Analyse du système de mesure"],
-            ["Équipement", msaProjectSpecs.equipment || "—"],
-            ["Référence", msaProjectSpecs.reference || "—"],
-            ["Pièce", msaProjectSpecs.piece || "—"],
-            ["Caractéristique", msaProjectSpecs.characteristics || "—"],
-            ["Résolution", msaProjectSpecs.resolutionVal ? `${msaProjectSpecs.resolutionVal} ${msaProjectSpecs.resolutionUnit}` : "—"],
-            ["Cible", msaProjectSpecs.target || "—"],
-            ["Tolérance inférieure", msaProjectSpecs.toleranceInf || "—"],
-            ["Tolérance supérieure", msaProjectSpecs.toleranceSup || "—"],
-            ["Date du rapport", reportDate],
-            ["Préparé par", reportAuthor || "—"],
-            ...(docNum ? [["N° document", docNum]] : []),
-          ],
-        });
-        if (s.msa) {
-          sheets.push({
-            name: "MSA - R&R",
-            rows: [
-              ["Source", "Écart-type", "% Contribution", "% Study Var"],
-              ["EV (Répétabilité)", msa.ev, msa.evContrib, msa.evPct],
-              ["AV (Reproductibilité)", msa.av, msa.avContrib, msa.avPct],
-              ["GRR (R&R)", msa.grr, msa.grrContrib, msa.grrPct],
-              ["PV (Pièce à pièce)", msa.pv, msa.pvContrib, msa.pvPct],
-              ["TV (Total)", msa.tv, 100, 100],
-              [],
-              ["Pièces", msa.parts], ["Opérateurs", msa.operators],
-              ["Essais (r)", msa.trials], ["ndc", msa.ndc],
-              ["%GRR", msa.grrPct], ["Statut", msa.interpretation],
-            ],
-          });
-        }
-        if (s.uncertainty) {
-          sheets.push({
-            name: "Incertitude",
-            rows: [
-              ["Composante", "Valeur"],
-              ["N", typeA.n], ["Moyenne", typeA.mean], ["s", typeA.s],
-              ["uA", uncertainty.uA], ["uB", uncertainty.uB], ["uC", uncertainty.uC],
-              ["k", uncertainty.k], ["U (élargie)", uncertainty.U],
-              ["Résultat", `${typeA.mean.toFixed(4)} ± ${uncertainty.U.toFixed(5)} ${specs.unit}`],
-            ],
-          });
-        }
-      }
-
-      const prefix = reportType === "spc" ? "rapport_spc" : "rapport_msa";
-      downloadXLSX(`${prefix}_${specs.projectName.replace(/\s+/g, "_")}_${reportDate}.xlsx`, sheets);
-      toast.success(`Export Excel ${reportType.toUpperCase()} généré`);
-      notificationActions.add({ type: "success", title: `Export Excel ${reportType.toUpperCase()} généré`, message: "Fichier multi-feuilles prêt." });
-    } catch (err: any) {
-      toast.error("Erreur Excel", { description: err.message });
-      notificationActions.add({ type: "error", title: "Erreur Excel", message: err.message });
-    } finally {
-      setBusy(null);
-    }
-  };
 
   const spcSectionDefs: { key: SpcSection; label: string; desc: string }[] = [
     { key: "spc", label: "Cartes SPC (X̄-R)", desc: "Cartes de contrôle, limites, règles Western Electric" },
@@ -900,16 +756,6 @@ const ReportsPage = () => {
             >
               {busy === "pdf" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
               Générer le PDF
-            </Button>
-            <Button
-              onClick={exportXlsx}
-              disabled={!anySelected || busy !== null}
-              variant="outline"
-              className="w-full gap-2"
-              size="lg"
-            >
-              {busy === "xlsx" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-              Exporter en Excel
             </Button>
             <div className="text-xs text-muted-foreground pt-2 border-t border-border">
               Source : <strong className="text-foreground">{filesCount > 0 ? `${filesCount} fichier(s) importé(s)` : "Données de démonstration"}</strong>

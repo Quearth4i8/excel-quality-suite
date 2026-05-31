@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, BarChart3 } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 
 const ResetPasswordPage = () => {
   const navigate = useNavigate();
@@ -63,8 +63,8 @@ const ResetPasswordPage = () => {
           <div className="login-glass-card rounded-2xl p-8">
 
             <div className="flex items-center gap-2 mb-6">
-              <BarChart3 className="h-6 w-6 text-blue-400" />
-              <span className="text-white/70 text-sm font-medium">SPC Control</span>
+              <img src="/logo.png" alt="CrimpControl" className="h-6 w-6 object-contain" />
+              <span className="text-white/70 text-sm font-medium">CrimpControl</span>
             </div>
 
             {!ready ? (
