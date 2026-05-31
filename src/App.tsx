@@ -15,6 +15,7 @@ import MSAPage from "./pages/MSAPage";
 import UncertaintyPage from "./pages/UncertaintyPage";
 import ReportsPage from "./pages/ReportsPage";
 import LoginPage from "./pages/LoginPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import AdminPage from "./pages/AdminPage";
 import NotFound from "./pages/NotFound.tsx";
 
@@ -29,6 +30,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route
               path="/"
               element={

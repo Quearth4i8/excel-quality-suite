@@ -24,14 +24,23 @@ export const MSASpecsPanel = ({ showFilePicker }: { showFilePicker?: boolean } =
   const specs = useAppStore((s) => s.msaProjectSpecs);
   const files = useAppStore((s) => s.files);
   const activeFileIndex = useAppStore((s) => s.activeFileIndex);
+  const mapping = useAppStore((s) => s.mapping);
 
   const set = (key: keyof MSAProjectSpecs) => (e: React.ChangeEvent<HTMLInputElement>) =>
     appActions.setMsaProjectSpecs({ [key]: e.target.value });
 
+  // Mirror getSheetForKind("msa") logic: kind detection + column-mapping fallback
   const msaFiles = files.filter((f) =>
     f.sheets.some((sh) => {
       const k = detectSheet(sh).kind;
-      return k === "msa" || k === "msa-rr";
+      if (k === "msa" || k === "msa-rr") return true;
+      if (mapping.partCol && mapping.operatorCol) {
+        return (
+          sh.headers.includes(mapping.partCol) &&
+          sh.headers.includes(mapping.operatorCol)
+        );
+      }
+      return false;
     })
   );
 

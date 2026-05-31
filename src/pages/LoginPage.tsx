@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/auth/AuthContext";
-import { BarChart3, Eye, EyeOff, Shield, TrendingUp } from "lucide-react";
+import { ArrowLeft, BarChart3, Eye, EyeOff, Shield, TrendingUp } from "lucide-react";
 
 const orbStyles = [
   { top: "10%", left: "15%", size: 500, color: "hsl(217, 91%, 60%)", delay: 0, duration: 20 },
@@ -24,7 +24,7 @@ const features = [
 ];
 
 const LoginPage = () => {
-  const { signInWithPassword, user } = useAuth();
+  const { signInWithPassword, resetPasswordForEmail, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -39,6 +39,25 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(() => localStorage.getItem("login_remember_email") !== null);
   const [busy, setBusy] = useState(false);
+
+  // Forgot password state
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotBusy, setForgotBusy] = useState(false);
+
+  const onForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotBusy(true);
+    try {
+      await resetPasswordForEmail(forgotEmail);
+      setForgotSent(true);
+    } catch (err: any) {
+      toast.error("Erreur", { description: err?.message ?? String(err) });
+    } finally {
+      setForgotBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (user) navigate(redirectTo, { replace: true });
@@ -120,80 +139,161 @@ const LoginPage = () => {
             </div>
           </div>
 
-          {/* Right side — login card */}
+          {/* Right side — login / forgot password card */}
           <div className="w-full max-w-md login-fade-right">
             <div className="login-glass-card rounded-2xl p-8">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-white">Connexion</h2>
-                <p className="text-sm text-white/50 mt-1">
-                  Connectez-vous pour accéder à vos projets.
-                </p>
-              </div>
 
-              <form onSubmit={onSubmit} className="space-y-5">
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-white/70">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className="login-input"
-                  />
+              {/* ── Forgot password sent confirmation ── */}
+              {forgotMode && forgotSent ? (
+                <div className="text-center space-y-4">
+                  <div className="w-14 h-14 rounded-full bg-green-500/20 border border-green-500/30 flex items-center justify-center mx-auto">
+                    <svg className="w-7 h-7 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-white">Email envoyé !</h2>
+                  <p className="text-sm text-white/60">
+                    Un lien de réinitialisation a été envoyé à <span className="text-white font-medium">{forgotEmail}</span>. Vérifiez votre boîte de réception (et vos spams).
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { setForgotMode(false); setForgotSent(false); setForgotEmail(""); }}
+                    className="inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300 transition-colors mt-2"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    Retour à la connexion
+                  </button>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password" className="text-white/70">Mot de passe</Label>
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      minLength={6}
-                      className="login-input pr-10"
-                    />
+
+              /* ── Forgot password form ── */
+              ) : forgotMode ? (
+                <>
+                  <div className="mb-6">
                     <button
                       type="button"
-                      tabIndex={-1}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-md flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-all"
-                      onClick={() => setShowPassword((v) => !v)}
-                      aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                      onClick={() => { setForgotMode(false); setForgotEmail(""); }}
+                      className="inline-flex items-center gap-1.5 text-sm text-white/50 hover:text-white/80 transition-colors mb-4"
                     >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      <ArrowLeft className="h-4 w-4" />
+                      Retour
                     </button>
+                    <h2 className="text-2xl font-bold text-white">Mot de passe oublié</h2>
+                    <p className="text-sm text-white/50 mt-1">
+                      Entrez votre email pour recevoir un lien de réinitialisation.
+                    </p>
                   </div>
-                </div>
+                  <form onSubmit={onForgot} className="space-y-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="forgot-email" className="text-white/70">Email</Label>
+                      <Input
+                        id="forgot-email"
+                        type="email"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        required
+                        autoFocus
+                        placeholder="votre@email.com"
+                        className="login-input"
+                      />
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full h-11 text-base font-semibold bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600 hover:from-blue-600 hover:via-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25 transition-all duration-300 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-[0.98]"
+                      disabled={forgotBusy}
+                    >
+                      {forgotBusy ? (
+                        <span className="flex items-center gap-2">
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Envoi…
+                        </span>
+                      ) : "Envoyer le lien"}
+                    </Button>
+                  </form>
+                </>
 
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="remember"
-                    checked={remember}
-                    onCheckedChange={(v) => setRemember(!!v)}
-                    className="border-white/20 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
-                  />
-                  <Label htmlFor="remember" className="text-sm text-white/50 cursor-pointer select-none">
-                    Se souvenir de moi
-                  </Label>
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full h-11 text-base font-semibold bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600 hover:from-blue-600 hover:via-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25 transition-all duration-300 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-[0.98]"
-                  disabled={busy}
-                >
-                  {busy ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Connexion…
-                    </span>
-                  ) : "Se connecter"}
-                </Button>
-              </form>
+              /* ── Login form ── */
+              ) : (
+                <>
+                  <div className="mb-6">
+                    <h2 className="text-2xl font-bold text-white">Connexion</h2>
+                    <p className="text-sm text-white/50 mt-1">
+                      Connectez-vous pour accéder à vos projets.
+                    </p>
+                  </div>
+                  <form onSubmit={onSubmit} className="space-y-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="email" className="text-white/70">Email</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        className="login-input"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="password" className="text-white/70">Mot de passe</Label>
+                        <button
+                          type="button"
+                          onClick={() => { setForgotMode(true); setForgotEmail(email); }}
+                          className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                        >
+                          Mot de passe oublié ?
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <Input
+                          id="password"
+                          type={showPassword ? "text" : "password"}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                          minLength={6}
+                          className="login-input pr-10"
+                        />
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-md flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-all"
+                          onClick={() => setShowPassword((v) => !v)}
+                          aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="remember"
+                        checked={remember}
+                        onCheckedChange={(v) => setRemember(!!v)}
+                        className="border-white/20 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
+                      />
+                      <Label htmlFor="remember" className="text-sm text-white/50 cursor-pointer select-none">
+                        Se souvenir de moi
+                      </Label>
+                    </div>
+                    <Button
+                      type="submit"
+                      className="w-full h-11 text-base font-semibold bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600 hover:from-blue-600 hover:via-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25 transition-all duration-300 hover:shadow-blue-500/40 hover:scale-[1.02] active:scale-[0.98]"
+                      disabled={busy}
+                    >
+                      {busy ? (
+                        <span className="flex items-center gap-2">
+                          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Connexion…
+                        </span>
+                      ) : "Se connecter"}
+                    </Button>
+                  </form>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -13,6 +13,8 @@ type AuthContextValue = {
   signInWithPassword: (args: { email: string; password: string }) => Promise<void>;
   signOut: () => Promise<void>;
   refreshRole: () => Promise<void>;
+  resetPasswordForEmail: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -109,6 +111,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user?.id) {
         await fetchUserRole(session.user.id);
       }
+    },
+    resetPasswordForEmail: async (email: string) => {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+    },
+    updatePassword: async (newPassword: string) => {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
     },
   }), [loading, session, role]);
 
