@@ -529,7 +529,7 @@ const VerdictCard = ({ U, tolerance, unit }: { U: number; tolerance: number | nu
   const barWidth     = pct !== null ? Math.min(pct, 100) : 0;
 
   return (
-    <SectionCard title="Verdict — Aptitude du système de mesure" className="mt-5">
+    <SectionCard title="Decision — Aptitude du système de mesure" className="mt-5">
       {!hasTolerance ? (
         <p className="text-xs text-muted-foreground italic">
           Saisissez une <span className="font-medium text-foreground">Tolérance T (±)</span> dans les informations du mesurande pour obtenir le verdict.

@@ -71,6 +71,9 @@ export const DEFAULT_MSA_PROJECT_SPECS: MSAProjectSpecs = {
   piece: "", characteristics: "", target: "", toleranceInf: "", toleranceSup: "",
 };
 
+export interface OperatorMeta { name: string; date: string; id: string; }
+export type MSAOperatorMeta = Record<string, OperatorMeta>;
+
 export type UncertaintyDistribution = "uniform" | "triangular" | "trapezoidal" | "normal";
 
 export interface UncertaintyTypeBRow {
@@ -122,6 +125,7 @@ export interface AppState {
   mapping: ColumnMapping;
   mergedSheet: ParsedSheet | null;
   msaProjectSpecs: MSAProjectSpecs;
+  msaOperatorMeta: MSAOperatorMeta;
   uncertaintyState: UncertaintyState;
 }
 
@@ -219,6 +223,7 @@ function loadPersisted(): Partial<AppState> {
       fileSpecs: parsed.fileSpecs ?? {},
       filePerColumnSpecs: parsed.filePerColumnSpecs ?? {},
       msaProjectSpecs: parsed.msaProjectSpecs ?? DEFAULT_MSA_PROJECT_SPECS,
+      msaOperatorMeta: parsed.msaOperatorMeta ?? {},
       uncertaintyState: parsed.uncertaintyState
         ? { ...DEFAULT_UNCERTAINTY, ...parsed.uncertaintyState }
         : DEFAULT_UNCERTAINTY,
@@ -241,6 +246,7 @@ const store = new SimpleStore<AppState>({
   mapping: { ...DEFAULT_MAPPING, ...(persisted.mapping || {}) },
   mergedSheet: null,
   msaProjectSpecs: { ...DEFAULT_MSA_PROJECT_SPECS, ...(persisted.msaProjectSpecs || {}) },
+  msaOperatorMeta: persisted.msaOperatorMeta ?? {},
   uncertaintyState: persisted.uncertaintyState ?? DEFAULT_UNCERTAINTY,
 });
 
@@ -256,6 +262,7 @@ function persist() {
         fileSpecs: s.fileSpecs,
         filePerColumnSpecs: s.filePerColumnSpecs,
         msaProjectSpecs: s.msaProjectSpecs,
+        msaOperatorMeta: s.msaOperatorMeta,
         uncertaintyState: s.uncertaintyState,
       })
     );
@@ -533,6 +540,13 @@ export const appActions = {
 
   setMsaProjectSpecs: (patch: Partial<MSAProjectSpecs>) => {
     store.set({ msaProjectSpecs: { ...store.get().msaProjectSpecs, ...patch } });
+    persist();
+  },
+
+  setMsaOperatorMeta: (patch: Partial<MSAOperatorMeta> | ((prev: MSAOperatorMeta) => MSAOperatorMeta)) => {
+    const prev = store.get().msaOperatorMeta;
+    const next = typeof patch === "function" ? patch(prev) : { ...prev, ...patch };
+    store.set({ msaOperatorMeta: next });
     persist();
   },
 

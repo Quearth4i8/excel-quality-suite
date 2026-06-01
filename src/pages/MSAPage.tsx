@@ -3,7 +3,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { AIPanel } from "@/components/ai/AIPanel";
 import { SectionCard } from "@/components/dashboard/SectionCard";
 import { EmptyState } from "@/components/dashboard/EmptyState";
-import { useAppStore } from "@/store/app-store";
+import { useAppStore, appActions } from "@/store/app-store";
 import { computeMSA, MSAEntry } from "@/lib/spc-engine";
 import { MSASpecsPanel } from "@/components/specs/MSASpecsPanel";
 import { detectSheet } from "@/lib/auto-detect";
@@ -15,8 +15,6 @@ import { CheckCircle2, AlertTriangle, XCircle, User } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-interface OperatorMeta { name: string; date: string; id: string; }
 
 const MSAPage = () => {
   const files  = useAppStore((s) => s.files);
@@ -63,10 +61,10 @@ const MSAPage = () => {
     return file.sheets[0] ?? null;
   }, [files, selectedFileIdx]);
 
-  // Operator metadata
-  const [opMeta, setOpMeta] = useState<Record<string, OperatorMeta>>({});
-  const setOpField = (op: string, key: keyof OperatorMeta) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setOpMeta((prev) => ({ ...prev, [op]: { ...(prev[op] ?? { name: "", date: "", id: "" }), [key]: e.target.value } }));
+  // Operator metadata — persisted in app store
+  const opMeta = useAppStore((s) => s.msaOperatorMeta);
+  const setOpField = (op: string, key: "name" | "date" | "id") => (e: React.ChangeEvent<HTMLInputElement>) =>
+    appActions.setMsaOperatorMeta((prev) => ({ ...prev, [op]: { ...(prev[op] ?? { name: "", date: "", id: "" }), [key]: e.target.value } }));
 
   const parseNum = (v: any): number => {
     if (typeof v === "number") return v;
@@ -92,7 +90,7 @@ const MSAPage = () => {
 
   useEffect(() => {
     if (operators.length === 0) return;
-    setOpMeta((prev) => {
+    appActions.setMsaOperatorMeta((prev) => {
       const next = { ...prev };
       operators.forEach((op) => { if (!next[op]) next[op] = { name: "", date: "", id: "" }; });
       return next;
