@@ -183,6 +183,8 @@ async function persistToDb() {
     perColumnSpecs: s.perColumnSpecs,
     fileSpecs: s.fileSpecs,
     filePerColumnSpecs: s.filePerColumnSpecs,
+    msaProjectSpecs: s.msaProjectSpecs,
+    msaOperatorMeta: s.msaOperatorMeta,
   };
 
   const { error } = await supabase
@@ -353,6 +355,10 @@ export const appActions = {
       fileSpecs,
       filePerColumnSpecs,
       mergedSheet: merged,
+      msaProjectSpecs: (dbState as any).msaProjectSpecs
+        ? { ...DEFAULT_MSA_PROJECT_SPECS, ...(dbState as any).msaProjectSpecs }
+        : store.get().msaProjectSpecs,
+      msaOperatorMeta: (dbState as any).msaOperatorMeta ?? store.get().msaOperatorMeta,
     });
   },
   addFile: (f: ParsedFile) => {
@@ -395,7 +401,14 @@ export const appActions = {
     const detectedTrial = msaDet?.map.trialCol ?? msaRRDet?.map.trialCol ?? null;
     const detectedValue = msaDet?.map.valueCol ?? msaRRDet?.map.valueCol ?? null;
 
-    const nextMeasureCols = spcDet
+    // When the new file is explicitly tagged for MSA, preserve the existing SPC mapping intact.
+    // MSA uploads must not overwrite measureCols or any SPC-specific columns.
+    const newFileIsMsa = f.uploadMode === "msa";
+    const newFileIsSpc = f.uploadMode === "spc";
+
+    const nextMeasureCols = newFileIsMsa
+      ? currentMapping.measureCols           // MSA upload: keep SPC cols untouched
+      : spcDet && (newFileIsSpc || !f.uploadMode)
       ? spcDet.map.measureCols
       : measuresStillValid
       ? currentMapping.measureCols
@@ -404,10 +417,11 @@ export const appActions = {
     const nextMapping: ColumnMapping = {
       ...currentMapping,
       measureCols: nextMeasureCols,
-      partCol: stillValid(currentMapping.partCol) ? currentMapping.partCol : detectedPart,
-      operatorCol: stillValid(currentMapping.operatorCol) ? currentMapping.operatorCol : detectedOperator,
-      trialCol: stillValid(currentMapping.trialCol) ? currentMapping.trialCol : detectedTrial,
-      valueCol: stillValid(currentMapping.valueCol) ? currentMapping.valueCol : detectedValue,
+      // MSA upload: only update MSA-specific cols; SPC upload: only update SPC cols
+      partCol:     newFileIsSpc ? currentMapping.partCol     : (stillValid(currentMapping.partCol)     ? currentMapping.partCol     : detectedPart),
+      operatorCol: newFileIsSpc ? currentMapping.operatorCol : (stillValid(currentMapping.operatorCol) ? currentMapping.operatorCol : detectedOperator),
+      trialCol:    newFileIsSpc ? currentMapping.trialCol    : (stillValid(currentMapping.trialCol)    ? currentMapping.trialCol    : detectedTrial),
+      valueCol:    newFileIsSpc ? currentMapping.valueCol    : (stillValid(currentMapping.valueCol)    ? currentMapping.valueCol    : detectedValue),
       validated: true,
     };
 
@@ -422,8 +436,12 @@ export const appActions = {
       unknown: detections.every((d) => d.kind === "unknown"),
     };
 
+    // If the new file has an explicit uploadMode, make it the active file regardless of auto-detection
+    const newFileIdx = files.length - 1;
     const preferredOrder = [msaRRDet, spcCardDet, dashboardDet, capabilityDet, uncertaintyDet, spcDet, msaDet];
-    const preferred = preferredOrder.find(d => d !== null) ?? { fileIdx: files.length - 1, sheetIdx: 0 };
+    const preferred = f.uploadMode
+      ? { fileIdx: newFileIdx, sheetIdx: 0 }
+      : preferredOrder.find(d => d !== null) ?? { fileIdx: newFileIdx, sheetIdx: 0 };
 
     const newActiveFileName = files[preferred.fileIdx]?.name ?? null;
     const specsSync = newActiveFileName && s.fileSpecs[newActiveFileName]
@@ -489,7 +507,18 @@ export const appActions = {
   },
   getSheetForKind: (kind: "spc" | "msa"): ParsedSheet | null => {
     const s = store.get();
-    const matchesKind = (sh: ParsedSheet) => {
+    const fileMatchesKind = (f: ParsedFile): boolean => {
+      if (f.uploadMode) return f.uploadMode === kind;
+      return f.sheets.some((sh) => {
+        const detected = detectSheet(sh).kind;
+        return (
+          detected === kind ||
+          (kind === "msa" && detected === "msa-rr") ||
+          (kind === "spc" && detected === "spc-card")
+        );
+      });
+    };
+    const sheetMatchesKind = (sh: ParsedSheet) => {
       const detected = detectSheet(sh).kind;
       return (
         detected === kind ||
@@ -500,16 +529,19 @@ export const appActions = {
     // Prefer the active file's matching sheet first
     if (s.activeFileIndex !== null) {
       const activeFile = s.files[s.activeFileIndex];
-      if (activeFile) {
-        const sh = activeFile.sheets.find(matchesKind);
+      if (activeFile && fileMatchesKind(activeFile)) {
+        const sh = activeFile.uploadMode
+          ? activeFile.sheets[0] ?? null
+          : activeFile.sheets.find(sheetMatchesKind) ?? null;
         if (sh) return sh;
       }
     }
     // Fall back to searching all files
     let fallbackSheet: ParsedSheet | null = null;
     for (const f of s.files) {
+      if (!fileMatchesKind(f)) continue;
       for (const sh of f.sheets) {
-        if (matchesKind(sh)) return sh;
+        if (f.uploadMode || sheetMatchesKind(sh)) return sh;
         if (kind === "msa" && !fallbackSheet && s.mapping.partCol && s.mapping.operatorCol) {
           const hasPart = sh.headers.includes(s.mapping.partCol);
           const hasOperator = sh.headers.includes(s.mapping.operatorCol);

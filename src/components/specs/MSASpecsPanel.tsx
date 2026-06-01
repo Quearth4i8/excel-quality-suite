@@ -30,8 +30,9 @@ export const MSASpecsPanel = ({ showFilePicker }: { showFilePicker?: boolean } =
     appActions.setMsaProjectSpecs({ [key]: e.target.value });
 
   // Mirror getSheetForKind("msa") logic: kind detection + column-mapping fallback
-  const msaFiles = files.filter((f) =>
-    f.sheets.some((sh) => {
+  const msaFiles = files.filter((f) => {
+    if (f.uploadMode) return f.uploadMode === "msa";
+    return f.sheets.some((sh) => {
       const k = detectSheet(sh).kind;
       if (k === "msa" || k === "msa-rr") return true;
       if (mapping.partCol && mapping.operatorCol) {
@@ -41,8 +42,8 @@ export const MSASpecsPanel = ({ showFilePicker }: { showFilePicker?: boolean } =
         );
       }
       return false;
-    })
-  );
+    });
+  });
 
   const activeFileName = activeFileIndex !== null ? files[activeFileIndex]?.name ?? null : null;
 

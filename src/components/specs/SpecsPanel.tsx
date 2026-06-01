@@ -42,14 +42,15 @@ export const SpecsPanel = ({ kindFilter }: { kindFilter?: "spc" | "msa" } = {}) 
   const allFiles = useAppStore((s) => s.files);
   const files = useMemo(() => {
     if (!kindFilter) return allFiles;
-    return allFiles.filter((f) =>
-      f.sheets.some((sh) => {
+    return allFiles.filter((f) => {
+      if (f.uploadMode) return f.uploadMode === kindFilter;
+      return f.sheets.some((sh) => {
         const k = detectSheet(sh).kind;
         if (kindFilter === "spc") return k === "spc" || k === "spc-card";
         if (kindFilter === "msa") return k === "msa" || k === "msa-rr";
         return false;
-      })
-    );
+      });
+    });
   }, [allFiles, kindFilter]);
   const activeFileIndex = useAppStore((s) => s.activeFileIndex);
   const fileSpecs = useAppStore((s) => s.fileSpecs);

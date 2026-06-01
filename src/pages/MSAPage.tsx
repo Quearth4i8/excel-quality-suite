@@ -36,8 +36,10 @@ const MSAPage = () => {
   // File selector — MSA files only
   const msaFiles = useMemo(
     () => files.reduce<{ idx: number; name: string }[]>((acc, f, i) => {
-      if (f.sheets.some((s) => { const k = detectSheet(s).kind; return k === "msa" || k === "msa-rr"; }))
-        acc.push({ idx: i, name: f.name });
+      const isMsa = f.uploadMode
+        ? f.uploadMode === "msa"
+        : f.sheets.some((s) => { const k = detectSheet(s).kind; return k === "msa" || k === "msa-rr"; });
+      if (isMsa) acc.push({ idx: i, name: f.name });
       return acc;
     }, []),
     [files]
@@ -60,6 +62,17 @@ const MSAPage = () => {
     }
     return file.sheets[0] ?? null;
   }, [files, selectedFileIdx]);
+
+  // Fallback: if mapping has no MSA columns but we have a sheet, detect directly from it
+  useEffect(() => {
+    if (!msaSheet) return;
+    if (colPart && msaSheet.headers.includes(colPart)) return;
+    const d = detectSheet(msaSheet);
+    if (d.mapping.partCol)     setColPart(d.mapping.partCol);
+    if (d.mapping.operatorCol) setColOp(d.mapping.operatorCol);
+    if (d.mapping.trialCol)    setColTrial(d.mapping.trialCol ?? "");
+    if (d.mapping.valueCol)    setColVal(d.mapping.valueCol ?? "");
+  }, [msaSheet]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Operator metadata — persisted in app store
   const opMeta = useAppStore((s) => s.msaOperatorMeta);

@@ -167,6 +167,97 @@ function hasCapabilityIndicators(headerStr: string, headers: string[], sheet: Pa
   return hasCapabilityTerms || (hasSingleNumericColumn && sheet.rows.length > 20);
 }
 
+function detectMSA_Heuristic(headers: string[], sheet: ParsedSheet): DetectionResult | null {
+  if (sheet.rows.length < 6 || headers.length < 2) return null;
+
+  const sample = sheet.rows.slice(0, Math.min(sheet.rows.length, 120));
+
+  interface ColProfile {
+    h: string;
+    uniqueCount: number;
+    totalCount: number;
+    avgReps: number;
+    isNumeric: boolean;
+    isAllInteger: boolean;
+    maxIntVal: number;
+    hasDecimal: boolean;
+  }
+
+  const profiles: ColProfile[] = headers.map((h) => {
+    const raw = sample.map((r) => r[h]).filter((v) => v != null && v !== "");
+    if (raw.length < 3) return null;
+    const strs = raw.map((v) => String(v).trim().replace(/,/g, "."));
+    const numericStrs = strs.filter((v) => v !== "" && !isNaN(Number(v)));
+    const isNumeric = numericStrs.length / strs.length >= 0.9;
+    const nums = numericStrs.map(Number);
+    const isAllInteger = isNumeric && nums.every((n) => Number.isInteger(n));
+    const maxIntVal = isAllInteger && nums.length > 0 ? Math.max(...nums) : Infinity;
+    const hasDecimal = isNumeric && nums.some((n) => !Number.isInteger(n));
+    const uniqueCount = new Set(strs).size;
+    const avgReps = strs.length / uniqueCount;
+    return { h, uniqueCount, totalCount: strs.length, avgReps, isNumeric, isAllInteger, maxIntVal, hasDecimal };
+  }).filter((p): p is ColProfile => p !== null);
+
+  if (profiles.length < 2) return null;
+
+  // Measurement column: numeric with decimal values and many unique values
+  const measureCandidates = profiles
+    .filter((p) => p.isNumeric && (p.hasDecimal || p.uniqueCount > 5) && !p.isAllInteger)
+    .sort((a, b) => b.uniqueCount - a.uniqueCount);
+
+  // Also allow integer measurements if they have many unique values (edge case)
+  const measureCandidatesFallback = profiles
+    .filter((p) => p.isNumeric && p.uniqueCount > Math.max(4, profiles.length * 2))
+    .sort((a, b) => b.uniqueCount - a.uniqueCount);
+
+  const valueCandidates = measureCandidates.length > 0 ? measureCandidates : measureCandidatesFallback;
+  if (valueCandidates.length === 0) return null;
+
+  const valueCol = valueCandidates[0].h;
+
+  const rest = profiles.filter((p) => p.h !== valueCol);
+
+  // Part column: integer values, multiple unique values (2–50 parts), each repeating >= 2 times
+  const partCandidates = rest
+    .filter((p) => p.isAllInteger && p.uniqueCount >= 2 && p.uniqueCount <= 50 && p.maxIntVal <= 200 && p.avgReps >= 2)
+    .sort((a, b) => b.uniqueCount - a.uniqueCount);
+
+  // Operator column: few distinct values (2–8), each repeating many times, short strings or small integers
+  const opCandidates = rest
+    .filter((p) => p.uniqueCount >= 2 && p.uniqueCount <= 8 && p.avgReps >= 3)
+    .sort((a, b) => a.uniqueCount - b.uniqueCount);
+
+  if (partCandidates.length === 0 && opCandidates.length === 0) return null;
+
+  let partCol: string | null = partCandidates[0]?.h ?? null;
+  let operatorCol: string | null = opCandidates.find((p) => p.h !== partCol)?.h ?? null;
+
+  // If only one candidate covers both roles, split by unique count
+  if (!operatorCol && partCandidates.length >= 2) {
+    operatorCol = partCandidates[1].h; // fewer uniques = more likely operator
+    if (partCandidates[0].uniqueCount < partCandidates[1].uniqueCount) {
+      [partCol, operatorCol] = [operatorCol, partCandidates[0].h];
+    }
+  }
+
+  // Need at least one of part/operator + the value column
+  if (!partCol && !operatorCol) return null;
+
+  // Try to find a trial column: integer, more reps than operator, distinct from part/operator
+  const trialCandidates = rest.filter(
+    (p) => p.h !== partCol && p.h !== operatorCol && p.isAllInteger && p.uniqueCount <= 10
+  );
+  const trialCol = trialCandidates[0]?.h ?? null;
+
+  return {
+    kind: "msa",
+    mapping: { partCol, operatorCol, trialCol, valueCol, measureCols: [valueCol] },
+    suggestedSubgroupSize: null,
+    reason: "Format MSA détecté par analyse de la structure des données (sans en-têtes standards).",
+    confidence: 0.72,
+  };
+}
+
 export function detectSheet(sheet: ParsedSheet): DetectionResult {
   const headers = sheet.headers.filter((h) => h && !h.startsWith("__"));
   const headerStr = headers.join(" ").toLowerCase();
@@ -265,7 +356,12 @@ export function detectSheet(sheet: ParsedSheet): DetectionResult {
     }
   }
 
-  // 7. SPC detection: numeric measure columns (M1..Mn, Mesure1.., or just numeric series)
+  // 7. Heuristic MSA detection: no named headers — detect by data patterns
+  //    Looks for: repeating integer part IDs + few-distinct-value operator codes + decimal measurements
+  const heuristicMsa = detectMSA_Heuristic(headers, sheet);
+  if (heuristicMsa) return heuristicMsa;
+
+  // 8. SPC detection: numeric measure columns (M1..Mn, Mesure1.., or just numeric series)
   const measureCols = headers.filter((h) => {
     if (!isNumericColumn(sheet, h)) return false;
     // Exclude obvious index/id columns

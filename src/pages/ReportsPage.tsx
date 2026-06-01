@@ -42,7 +42,7 @@ import { toast } from "sonner";
 
 type ReportType = "spc" | "msa";
 type SpcSection = "spc" | "capability" | "uncertainty" | "documentNumber";
-type MsaSection = "msa" | "uncertainty" | "documentNumber";
+type MsaSection = "msa" | "documentNumber";
 
 const ReportsPage = () => {
   const specs = useAppStore((s) => s.specs);
@@ -63,7 +63,6 @@ const ReportsPage = () => {
   });
   const [msaSelected, setMsaSelected] = useState<Record<MsaSection, boolean>>({
     msa: true,
-    uncertainty: true,
     documentNumber: false,
   });
 
@@ -507,27 +506,6 @@ const ReportsPage = () => {
           }
         }
 
-        if (s.uncertainty) {
-          startSection(`${s.msa ? 2 : 1}. Incertitude de mesure`, 1);
-          autoTable(doc, {
-            startY: 24,
-            head: [["Composante", "Valeur"]],
-            body: [
-              ["N", String(typeA.n)],
-              ["Moyenne", typeA.mean.toFixed(4)],
-              ["s", typeA.s.toFixed(5)],
-              ["uA", uncertainty.uA.toFixed(5)],
-              ["uB", uncertainty.uB.toFixed(5)],
-              ["uC", uncertainty.uC.toFixed(5)],
-              ["k", String(uncertainty.k)],
-              ["U", uncertainty.U.toFixed(5)],
-              ["Résultat", `${typeA.mean.toFixed(4)} ± ${uncertainty.U.toFixed(5)} ${specs.unit}`],
-            ],
-            theme: "grid",
-            headStyles: { fillColor: [147, 51, 234] },
-          });
-        }
-
         // Annexes MSA
         startSection("A. Annexes — Paramètres MSA", 1);
         autoTable(doc, {
@@ -621,7 +599,6 @@ const ReportsPage = () => {
 
   const msaSectionDefs: { key: MsaSection; label: string; desc: string }[] = [
     { key: "msa", label: "MSA (R&R)", desc: "Répétabilité, reproductibilité, %GRR, ndc, décomposition" },
-    { key: "uncertainty", label: "Incertitude", desc: "Type A + Type B, combinée, élargie (U)" },
     { key: "documentNumber", label: "Numéro de document", desc: "Inclure le numéro de document dans l'en-tête" },
   ];
 
@@ -852,18 +829,6 @@ const ReportsPage = () => {
                     </div>
                   </div>
                 </>
-              )}
-              {msaSelected.uncertainty && (
-                <div className="bg-card p-3 rounded-lg border border-border lg:col-span-2 text-sm">
-                  <div className="text-xs font-medium text-muted-foreground mb-2">Budget d'incertitude</div>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                    <Mini label="uA" v={uncertainty.uA.toFixed(5)} />
-                    <Mini label="uB" v={uncertainty.uB.toFixed(5)} />
-                    <Mini label="uC" v={uncertainty.uC.toFixed(5)} />
-                    <Mini label="k" v={String(uncertainty.k)} />
-                    <Mini label="U élargie" v={uncertainty.U.toFixed(5)} highlight />
-                  </div>
-                </div>
               )}
             </>
           )}

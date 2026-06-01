@@ -43,11 +43,13 @@ const DataPage = ({ mode }: DataPageProps) => {
 
   const isSpc = mode === "spc";
 
-  const isFileOfMode = (f: (typeof files)[number]) =>
-    f.sheets.some((s) => {
+  const isFileOfMode = (f: (typeof files)[number]) => {
+    if (f.uploadMode) return f.uploadMode === mode;
+    return f.sheets.some((s) => {
       const k = detectSheet(s).kind;
       return isSpc ? k === "spc" || k === "spc-card" : k === "msa" || k === "msa-rr";
     });
+  };
 
   const modeFileIndices = files.reduce<number[]>((acc, f, i) => {
     if (isFileOfMode(f)) acc.push(i);
@@ -64,6 +66,7 @@ const DataPage = ({ mode }: DataPageProps) => {
     for (const f of Array.from(list)) {
       try {
         const parsed = await parseExcelFile(f);
+        parsed.uploadMode = mode;
         appActions.addFile(parsed);
         imported++;
       } catch (err: any) {
@@ -113,6 +116,7 @@ const DataPage = ({ mode }: DataPageProps) => {
         name: "demo-spc.xlsx",
         sheets: [{ name: "SPC_Demo", headers: ["Subgroup", "M1", "M2", "M3", "M4", "M5"], rows: spcRows, matrix: [] }],
         importedAt: new Date().toISOString(),
+        uploadMode: "spc",
       });
       appActions.setMapping({ measureCols: ["M1", "M2", "M3", "M4", "M5"], validated: true });
       appActions.setSpecs({ subgroupSize: 5 });
@@ -127,6 +131,7 @@ const DataPage = ({ mode }: DataPageProps) => {
           matrix: [],
         }],
         importedAt: new Date().toISOString(),
+        uploadMode: "msa",
       });
       toast.success("Données MSA de démonstration chargées");
     }
@@ -335,7 +340,7 @@ const DataPage = ({ mode }: DataPageProps) => {
 
       {/* ── Specs ── */}
       <div className="mb-5">
-        {isSpc ? <SpecsPanel /> : <MSASpecsPanel />}
+        {isSpc ? <SpecsPanel kindFilter="spc" /> : <MSASpecsPanel />}
       </div>
 
       {/* ── Preview dialog ── */}

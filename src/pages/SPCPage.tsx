@@ -21,12 +21,13 @@ const SPCPage = () => {
   const activeFileIndex = useAppStore((s) => s.activeFileIndex);
   const specs = useAppStore((s) => s.specs);
 
-  const spcFiles = files.filter((f) =>
-    f.sheets.some((s) => {
+  const spcFiles = files.filter((f) => {
+    if (f.uploadMode) return f.uploadMode === "spc";
+    return f.sheets.some((s) => {
       const k = detectSheet(s).kind;
       return k === "spc" || k === "spc-card";
-    })
-  );
+    });
+  });
 
   // ── Explicit user selections (all local — zero global mapping used) ──
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
@@ -38,10 +39,11 @@ const SPCPage = () => {
 
   // ── Resolve exactly one file and one sheet — never touches merged data ──
   const activeFile = activeFileIndex !== null ? files[activeFileIndex] : null;
-  const activeIsSpc = activeFile?.sheets.some((s) => {
-    const k = detectSheet(s).kind;
-    return k === "spc" || k === "spc-card";
-  });
+  const activeIsSpc = activeFile
+    ? activeFile.uploadMode
+      ? activeFile.uploadMode === "spc"
+      : activeFile.sheets.some((s) => { const k = detectSheet(s).kind; return k === "spc" || k === "spc-card"; })
+    : false;
   const defaultFile = (activeIsSpc ? activeFile : null) ?? spcFiles[0] ?? null;
   const selectedFile =
     (selectedFileName ? spcFiles.find((f) => f.name === selectedFileName) ?? null : null) ?? defaultFile;

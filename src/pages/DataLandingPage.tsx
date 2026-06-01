@@ -8,13 +8,15 @@ const DataLandingPage = () => {
   const navigate = useNavigate();
   const files = useAppStore((s) => s.files);
 
-  const spcCount = files.filter((f) =>
-    f.sheets.some((s) => { const k = detectSheet(s).kind; return k === "spc" || k === "spc-card"; })
-  ).length;
+  const spcCount = files.filter((f) => {
+    if (f.uploadMode) return f.uploadMode === "spc";
+    return f.sheets.some((s) => { const k = detectSheet(s).kind; return k === "spc" || k === "spc-card"; });
+  }).length;
 
-  const msaCount = files.filter((f) =>
-    f.sheets.some((s) => { const k = detectSheet(s).kind; return k === "msa" || k === "msa-rr"; })
-  ).length;
+  const msaCount = files.filter((f) => {
+    if (f.uploadMode) return f.uploadMode === "msa";
+    return f.sheets.some((s) => { const k = detectSheet(s).kind; return k === "msa" || k === "msa-rr"; });
+  }).length;
 
   return (
     <AppLayout title="Données" subtitle="Choisissez le type de données à gérer">

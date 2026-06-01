@@ -11,7 +11,15 @@ import { CheckCircle2, AlertTriangle, XCircle, Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const CapabilityPage = () => {
-  const spcSheet = useAppStore(() => appActions.getSheetForKind("spc"));
+  const files = useAppStore((s) => s.files);
+  const rawSpcSheet = useAppStore(() => appActions.getSheetForKind("spc"));
+  // Never use a sheet that belongs to an MSA-tagged file
+  const spcSheet = (() => {
+    if (!rawSpcSheet) return null;
+    const ownerFile = files.find((f) => f.sheets.includes(rawSpcSheet));
+    if (ownerFile?.uploadMode === "msa") return null;
+    return rawSpcSheet;
+  })();
   const specs = useAppStore((s) => s.specs);
   const mapping = useAppStore((s) => s.mapping);
 

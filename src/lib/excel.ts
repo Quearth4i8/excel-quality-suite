@@ -11,6 +11,7 @@ export interface ParsedFile {
   name: string;
   sheets: ParsedSheet[];
   importedAt: string;
+  uploadMode?: "spc" | "msa";
 }
 
 export async function parseExcelFile(file: File): Promise<ParsedFile> {
